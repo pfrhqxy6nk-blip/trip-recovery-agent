@@ -1,0 +1,59 @@
+from enum import StrEnum
+
+
+class TripStatus(StrEnum):
+    HEALTHY = "HEALTHY"
+    AT_RISK = "AT_RISK"
+    RECOVERED = "RECOVERED"
+
+
+class IncidentStatus(StrEnum):
+    RECEIVED = "RECEIVED"
+    ANALYZING = "ANALYZING"
+    PLANNING = "PLANNING"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    EXECUTING = "EXECUTING"
+    VERIFYING = "VERIFYING"
+    RECOVERED = "RECOVERED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class ActionStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ActionSafetyClass(StrEnum):
+    INTERNAL_REVERSIBLE = "INTERNAL_REVERSIBLE"
+    EXTERNAL_REVERSIBLE = "EXTERNAL_REVERSIBLE"
+    FINANCIAL = "FINANCIAL"
+    IRREVERSIBLE = "IRREVERSIBLE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class ItemType(StrEnum):
+    FLIGHT = "FLIGHT"
+    TRANSFER = "TRANSFER"
+    HOTEL_ARRIVAL = "HOTEL_ARRIVAL"
+    ACTIVITY = "ACTIVITY"
+
+
+class DependencyType(StrEnum):
+    CONNECTION = "CONNECTION"
+    FOLLOW_ON = "FOLLOW_ON"
+
+
+class EventProcessingStatus(StrEnum):
+    PROCESSING = "PROCESSING"
+    RETRYABLE = "RETRYABLE"
+    COMPLETED = "COMPLETED"
+
+
+class ClaimKind(StrEnum):
+    NEW = "NEW"
+    RESUMED = "RESUMED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
