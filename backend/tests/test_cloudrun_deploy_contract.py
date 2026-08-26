@@ -50,10 +50,16 @@ def test_m7_edge_worker_deploy_does_not_regress_to_chat_only_worker() -> None:
     assert "--allow-unauthenticated" in source
     assert "MAX_INSTANCES must be 1" in source
     assert "per-user Vertex budget cannot exceed the global budget" in source
-    assert 'if [ "${APPLY:-false}" = "true" ]; then' in source
-    assert "set CALENDAR_OAUTH_CLIENT_ID for the full Google rollout" in source
-    assert "set CALENDAR_REDIRECT_URI for the full Google rollout" in source
-    assert "set GMAIL_REDIRECT_URI for the full Google rollout" in source
+    # Google integrations are opt-in; Telegram/Trip Watch can roll out before
+    # OAuth consent and provider reread verification are complete.
+    assert 'CALENDAR_ENABLED="${ENABLE_CALENDAR_CONNECTIONS:-false}"' in source
+    assert 'GMAIL_ENABLED="${ENABLE_GMAIL_CONNECTIONS:-false}"' in source
+    assert "ENABLE_CALENDAR_ACTIONS=true requires ENABLE_CALENDAR_CONNECTIONS=true" in source
+    assert "ENABLE_GMAIL_DRAFTS=true requires ENABLE_GMAIL_CONNECTIONS=true" in source
+    assert 'ENABLE_CALENDAR_CONNECTIONS=${CALENDAR_ENABLED}' in source
+    assert 'ENABLE_GMAIL_CONNECTIONS=${GMAIL_ENABLED}' in source
+    assert "ENABLE_CALENDAR_CONNECTIONS=true,ENABLE_CALENDAR_ACTIONS=true" not in source
+    assert "ENABLE_GMAIL_CONNECTIONS=true,ENABLE_GMAIL_DRAFTS=true" not in source
 
 
 def test_trip_watch_scheduler_uses_valid_cron_and_custom_service_account_name() -> None:

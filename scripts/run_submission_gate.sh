@@ -18,6 +18,7 @@ echo "[2/8] Static checks"
 PYTHONPYCACHEPREFIX="${PYTHONPYCACHEPREFIX:-/tmp/trip-agent-pycache}" \
   python3 -m compileall -q backend cloud_function scripts
 bash -n scripts/*.sh
+scripts/test_deploy_m7_preflight.sh
 git diff --check
 
 echo "[3/8] Canonical autonomous recovery"
