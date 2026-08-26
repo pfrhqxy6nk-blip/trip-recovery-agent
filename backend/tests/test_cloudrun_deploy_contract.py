@@ -36,8 +36,10 @@ def test_worker_deploy_keeps_autonomous_runtime_and_secret_contract() -> None:
 
 
 def test_m7_edge_worker_deploy_does_not_regress_to_chat_only_worker() -> None:
-    source = _read("deploy-m7.sh")
+    deploy_script = ROOT.joinpath("infra", "cloudrun", "deploy-m7.sh")
+    source = deploy_script.read_text()
 
+    assert deploy_script.stat().st_mode & 0o111
     assert "GEMINI_MODEL_ID:?set GEMINI_MODEL_ID" in source
     assert "ENABLE_TRIP_WATCH=${WATCH_ENABLED}" in source
     assert "ENABLE_JUDGE_MODE=${JUDGE_ENABLED}" in source
