@@ -40,10 +40,13 @@ if result.get("pending_update_count") != 0:
 if result.get("last_error_message"):
     message = result["last_error_message"]
     error_date = result.get("last_error_date", "unknown time")
-    raise SystemExit(f"Telegram reports a current webhook error ({error_date}): {message}")
+    raise SystemExit(
+        "Telegram reports a recorded webhook error "
+        f"({error_date}); a fresh valid Telegram update is required to clear this gate: {message}"
+    )
 
 print(f"Telegram bot: @{me['result'].get('username', '<unnamed>')}")
-print("Telegram webhook: healthy (URL matches, no pending updates, no current error)")
+print("Telegram webhook: healthy (URL matches, no pending updates, no recorded error)")
 PY
 
 edge_status="$(curl --silent --show-error --connect-timeout 5 --max-time 20 \
