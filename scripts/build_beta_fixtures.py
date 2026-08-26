@@ -162,10 +162,15 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "warsaw-munich-lisbon-booking-email.txt").write_text(EMAIL_TEXT, encoding="utf-8")
     build_pdf(OUT / "warsaw-munich-lisbon-booking.pdf")
-    with zipfile.ZipFile(
-        OUT / "warsaw-munich-lisbon-demo.pkpass", "w", compression=zipfile.ZIP_DEFLATED
-    ) as archive:
-        archive.writestr("pass.json", json.dumps(PASS_JSON, indent=2) + "\n")
+    # Keep the fixture byte-for-byte reproducible. ZipFile otherwise embeds
+    # the current wall-clock timestamp, which creates a noisy binary diff on
+    # every regeneration and makes the judge pack harder to verify.
+    pass_info = zipfile.ZipInfo("pass.json", date_time=(1980, 1, 1, 0, 0, 0))
+    pass_info.create_system = 3
+    pass_info.external_attr = 0o644 << 16
+    pass_info.compress_type = zipfile.ZIP_DEFLATED
+    with zipfile.ZipFile(OUT / "warsaw-munich-lisbon-demo.pkpass", "w") as archive:
+        archive.writestr(pass_info, json.dumps(PASS_JSON, indent=2) + "\n")
     (OUT / "airport-board-delay.txt").write_text(
         "TRIP WATCH BETA FIXTURE - NOT LIVE\n"
         "Synthetic airport-board signal for the judge simulator.\n"
