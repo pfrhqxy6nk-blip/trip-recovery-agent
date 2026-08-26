@@ -41,4 +41,23 @@ env "${common[@]}" \
   "${script}" >"${tmp_dir}/calendar.out"
 grep -Fq 'Calendar=true/false, Gmail=false/false' "${tmp_dir}/calendar.out"
 
+if env "${common[@]}" ENABLE_GMAIL_DRAFTS=true "${script}" >"${tmp_dir}/invalid-gmail.out" 2>&1; then
+  echo "Gmail drafts unexpectedly passed without a connection." >&2
+  exit 1
+fi
+grep -Fq 'requires ENABLE_GMAIL_CONNECTIONS=true' "${tmp_dir}/invalid-gmail.out"
+
+if env "${common[@]}" ENABLE_GMAIL_CONNECTIONS=true "${script}" >"${tmp_dir}/missing-gmail.out" 2>&1; then
+  echo "Gmail connection unexpectedly passed without OAuth configuration." >&2
+  exit 1
+fi
+grep -Fq 'when enabling Gmail' "${tmp_dir}/missing-gmail.out"
+
+env "${common[@]}" \
+  ENABLE_GMAIL_CONNECTIONS=true \
+  GMAIL_OAUTH_CLIENT_ID=gmail-client-id \
+  GMAIL_REDIRECT_URI=https://edge.example.test/connections/gmail/callback \
+  "${script}" >"${tmp_dir}/gmail.out"
+grep -Fq 'Calendar=false/false, Gmail=true/false' "${tmp_dir}/gmail.out"
+
 echo "deploy-m7 preflight checks: PASS"
