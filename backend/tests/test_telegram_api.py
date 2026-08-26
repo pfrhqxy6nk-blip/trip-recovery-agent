@@ -507,6 +507,48 @@ async def test_forwarded_beta_pdf_builds_draft_without_caption() -> None:
     assert "Save trip" in button_texts
 
 
+async def test_unreadable_media_returns_a_recoverable_telegram_message() -> None:
+    gateway = MediaTelegramGateway(content=b"not a ticket")
+    client = await telegram_client(gateway)
+    headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret-123456"}
+    document_update = {
+        "update_id": 32,
+        "message": {
+            "chat": {"id": 202},
+            "from": {"id": 101},
+            "document": {
+                "file_id": "telegram-invalid-pdf",
+                "file_name": "not-a-ticket.pdf",
+                "mime_type": "application/pdf",
+            },
+        },
+    }
+    try:
+        await client.post("/telegram/webhook", json=message_update(1, "/start"), headers=headers)
+        for offset, callback in enumerate(
+            [
+                "onboard:setup",
+                "onboard:calendar_auto",
+                "onboard:service_auto",
+                "onboard:reversible_auto",
+                "onboard:spend_none",
+                "onboard:boundary_continue",
+                "onboard:activate",
+            ],
+            start=2,
+        ):
+            await client.post(
+                "/telegram/webhook", json=callback_update(offset, callback), headers=headers
+            )
+        response = await client.post("/telegram/webhook", json=document_update, headers=headers)
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert "could not read a flight or hotel" in response.json()["text"]
+    assert "send the document or message again" in response.json()["text"].lower()
+
+
 async def test_webhook_rejects_malformed_oversized_and_unknown_updates() -> None:
     client = await telegram_client()
     headers = {

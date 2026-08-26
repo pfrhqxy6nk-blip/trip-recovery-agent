@@ -558,7 +558,22 @@ async def telegram_webhook(
         TelegramGmailError,
         TelegramDemoError,
     ) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        # Telegram retries non-2xx webhook responses. For ordinary messages,
+        # returning a small recoverable view is therefore safer for the
+        # conversation than surfacing a bare 400 (which looks like a blank bot
+        # and causes the same update to be delivered repeatedly). Callback
+        # failures remain fail-closed so an invalid or cross-user action never
+        # gets acknowledged as a successful state transition.
+        if update_kind == "message":
+            view = TelegramView(
+                text=(
+                    "I couldn't complete that yet.\n\n"
+                    f"{str(exc)}\n\n"
+                    "Send the document or message again, or use /start to restart setup."
+                )
+            )
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except TelegramGatewayError as exc:
         status_code = 413 if exc.status_code == 413 else 502
         raise HTTPException(
