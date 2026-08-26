@@ -549,6 +549,34 @@ async def test_unreadable_media_returns_a_recoverable_telegram_message() -> None
     assert "send the document or message again" in response.json()["text"].lower()
 
 
+async def test_unsupported_media_explains_accepted_formats() -> None:
+    gateway = MediaTelegramGateway()
+    client = await telegram_client(gateway)
+    headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret-123456"}
+    update = {
+        "update_id": 33,
+        "message": {
+            "chat": {"id": 202},
+            "from": {"id": 101},
+            "document": {
+                "file_id": "telegram-unsupported",
+                "file_name": "passport.zip",
+                "mime_type": "application/octet-stream",
+            },
+        },
+    }
+    try:
+        response = await client.post("/telegram/webhook", json=update, headers=headers)
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    text = response.json()["text"]
+    assert "PDF ticket" in text
+    assert ".pkpass" in text
+    assert "PNG/JPG/WebP" in text
+
+
 async def test_webhook_rejects_malformed_oversized_and_unknown_updates() -> None:
     client = await telegram_client()
     headers = {

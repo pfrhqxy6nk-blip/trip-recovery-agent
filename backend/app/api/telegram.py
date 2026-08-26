@@ -440,24 +440,39 @@ async def telegram_webhook(
             gateway_for_media = _media_gateway(request)
             if gateway_for_media is None:
                 raise HTTPException(status_code=503, detail="Telegram media gateway is unavailable")
-            file_id, file_name, mime_type = _media_descriptor(update)
-            downloaded = await gateway_for_media.download_file(
-                file_id=file_id,
-                file_name=file_name,
-                mime_type=mime_type,
-                max_bytes=MAX_TELEGRAM_MEDIA_BYTES,
-            )
-            raw_caption = update.message.caption or update.message.text
-            view = await _trip_service(request).handle_media_message(
-                telegram_user_id=str(update.message.from_user.user_id),
-                telegram_chat_id=str(update.message.chat.id),
-                media_bytes=downloaded.content,
-                mime_type=downloaded.mime_type or mime_type or "application/octet-stream",
-                caption=raw_caption,
-                source_id=downloaded.file_id,
-                source_name=downloaded.file_name,
-                now=now,
-            )
+            try:
+                file_id, file_name, mime_type = _media_descriptor(update)
+            except HTTPException as exc:
+                # An unsupported upload is a user-correctable input error, not a
+                # transient webhook failure. Explain the accepted formats in
+                # Telegram so the update is not retried into a blank chat.
+                if exc.status_code == 415 and update_kind == "message":
+                    view = TelegramView(
+                        text=(
+                            "I can read a PDF ticket, Apple Wallet .pkpass, or a PNG/JPG/WebP "
+                            "booking screenshot. Please send one of those formats."
+                        )
+                    )
+                else:
+                    raise
+            else:
+                downloaded = await gateway_for_media.download_file(
+                    file_id=file_id,
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    max_bytes=MAX_TELEGRAM_MEDIA_BYTES,
+                )
+                raw_caption = update.message.caption or update.message.text
+                view = await _trip_service(request).handle_media_message(
+                    telegram_user_id=str(update.message.from_user.user_id),
+                    telegram_chat_id=str(update.message.chat.id),
+                    media_bytes=downloaded.content,
+                    mime_type=downloaded.mime_type or mime_type or "application/octet-stream",
+                    caption=raw_caption,
+                    source_id=downloaded.file_id,
+                    source_name=downloaded.file_name,
+                    now=now,
+                )
         elif update.message is not None:
             view = await _conversation_service(request).handle(
                 telegram_user_id=str(update.message.from_user.user_id),
