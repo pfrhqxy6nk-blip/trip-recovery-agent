@@ -1,0 +1,46 @@
+{
+  "plugin": "devpost-hackathon",
+  "version": 2,
+  "hackathon": {
+    "slug": "allthingsagentichackathon",
+    "name": "All Things Agentic Hackathon",
+    "url": "https://allthingsagentichackathon.devpost.com/",
+    "selected": true,
+    "source": "known"
+  },
+  "participant": {
+    "name": "",
+    "display_name": "Oleksandr Koriahin"
+  },
+  "project": {
+    "name": "Trip Recovery Agent",
+    "summary": "A Telegram-first autonomous recovery layer for already-booked trips that repairs safe downstream consequences and interrupts the traveler only for consequential decisions.",
+    "ai_usage": "",
+    "codex_usage": ""
+  },
+  "current_stage": "prepare-submission",
+  "completed_stages": [
+    "start-hackathon",
+    "review",
+    "resources"
+  ],
+  "rules_acknowledged": true,
+  "learning": {
+    "status": "active",
+    "current_step": "build",
+    "completed_steps": [
+      "onboard",
+      "scope",
+      "prd",
+      "spec",
+      "checklist"
+    ],
+    "plan_file": "docs/hackathon-build/scope.md",
+    "checklist_file": "docs/hackathon-build/checklist.md"
+  },
+  "submission": {
+    "draft_file": "devpost-submission.md",
+    "status": "drafting"
+  },
+  "next_command": "prepare-submission"
+}

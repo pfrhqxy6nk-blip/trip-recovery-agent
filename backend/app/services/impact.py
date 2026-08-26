@@ -26,9 +26,7 @@ class DeterministicImpactEngine:
             raise ImpactCalculationError("event trip does not match loaded trip")
 
         items = {item.item_id: item for item in trip.items}
-        disrupted = next(
-            (item for item in trip.items if item.external_id == event.flight), None
-        )
+        disrupted = next((item for item in trip.items if item.external_id == event.flight), None)
         if disrupted is None:
             raise ImpactCalculationError(f"flight {event.flight!r} is not in trip")
 

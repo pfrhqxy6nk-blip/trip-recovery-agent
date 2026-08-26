@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.commands import WorkflowCommand
 from app.models.domain import DisruptionEvent
 
 
@@ -23,6 +24,14 @@ class PubSubMessage(BaseModel):
         except (ValueError, json.JSONDecodeError) as exc:
             raise ValueError("invalid Pub/Sub message data") from exc
         return DisruptionEvent.model_validate(payload)
+
+    def decode_command(self) -> WorkflowCommand:
+        try:
+            raw = base64.b64decode(self.data, validate=True)
+            payload: Any = json.loads(raw)
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid Pub/Sub message data") from exc
+        return WorkflowCommand.model_validate(payload)
 
 
 class PubSubEnvelope(BaseModel):

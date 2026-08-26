@@ -1,0 +1,146 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+6 0 obj
+<< /Length 1633 >>
+stream
+q
+0.98 0.98 0.98 rg
+36 330 540 470 re
+f
+Q
+BT
+/F1 9 Tf
+0.09 0.41 0.88 rg
+48 770 Td
+(TRIP WATCH / BETA FIXTURE) Tj
+ET
+BT
+/F2 22 Tf
+0.07 0.07 0.07 rg
+48 738 Td
+(Synthetic booking confirmation) Tj
+ET
+BT
+/F1 11 Tf
+0.75 0.15 0.12 rg
+48 704 Td
+(DEMO ONLY - NOT VALID FOR TRAVEL) Tj
+ET
+BT
+/F1 10 Tf
+0.3 0.3 0.3 rg
+48 680 Td
+(Generated for the hackathon judge flow. No ticket, reservation, payment,) Tj
+ET
+BT
+/F1 10 Tf
+0.3 0.3 0.3 rg
+48 664 Td
+(or identity document exists.) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 620 Td
+(PASSENGER     Alex Morgan) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 594 Td
+(PNR           TWDEMO) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 568 Td
+(OUTBOUND      LO351   WAW -> MUC) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 542 Td
+(DEPARTURE     2026-09-08T09:10:00+02:00) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 516 Td
+(ARRIVAL       2026-09-08T10:45:00+02:00) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 490 Td
+(CONNECTION     LH1790   MUC -> LIS   55 min) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 464 Td
+(DEPARTURE     2026-09-08T11:40:00+02:00) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 438 Td
+(ARRIVAL       2026-09-08T13:45:00+01:00) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 412 Td
+(HOTEL         Hotel Torbraeu   late-arrival watch) Tj
+ET
+BT
+/F1 11 Tf
+0.07 0.07 0.07 rg
+48 386 Td
+(TRANSFER      Lisbon Airport pickup   2026-09-08T14:30:00+01:00) Tj
+ET
+BT
+/F1 10 Tf
+0.3 0.3 0.3 rg
+48 340 Td
+(Forward this PDF to the Telegram bot. Gemini extracts the itinerary; the) Tj
+ET
+BT
+/F1 10 Tf
+0.3 0.3 0.3 rg
+48 324 Td
+(companion text and .pkpass fixtures provide a deterministic fallback.) Tj
+ET
+0.09 0.41 0.88 RG
+48 420 m
+564 420 l
+S
+endstream
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000000321 00000 n 
+0000000396 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+2081
+%%EOF

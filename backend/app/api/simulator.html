@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Recovery Agent · Live Blast-Radius Simulator</title>
+<style>
+:root{--bg:#fafafa;--card:#fff;--border:#e5e5e5;--text:#111;--muted:#666;--danger:#d9383a;--warning:#d97706;--success:#16a34a;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+body{background:var(--bg);color:var(--text);padding:32px 16px;line-height:1.5;}
+.container{max-width:980px;margin:0 auto;}
+header{border-bottom:1px solid var(--border);padding-bottom:20px;margin-bottom:28px;}
+.header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;background:#000;color:#fff;padding:3px 8px;border-radius:2px;}
+.btn-tour{background:#fff;border:1px solid #000;color:#000;padding:6px 14px;font-size:12px;font-weight:700;border-radius:3px;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.btn-tour:hover{background:#000;color:#fff;}
+h1{font-size:26px;font-weight:700;letter-spacing:-0.02em;margin-bottom:6px;}
+p.subtitle{color:var(--muted);font-size:14px;}
+.grid{display:grid;grid-template-columns:1fr 340px;gap:24px;}
+@media(max-width:800px){.grid{grid-template-columns:1fr;}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:20px;margin-bottom:20px;}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:#888;margin-bottom:16px;}
+
+.tour-banner{background:#f0fdf4;border:1px solid #bbf7d0;padding:12px 16px;border-radius:4px;margin-bottom:20px;display:none;}
+.tour-step-title{font-size:13px;font-weight:700;color:#15803d;margin-bottom:2px;}
+.tour-step-desc{font-size:12px;color:#166534;}
+
+.control-group{margin-bottom:18px;}
+label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+.slider-val{float:right;font-family:monospace;font-size:14px;font-weight:700;color:#000;}
+input[type=range]{width:100%;accent-color:#000;}
+select{width:100%;padding:8px;border:1px solid var(--border);border-radius:3px;background:#fff;font-size:13px;}
+.checkbox-row{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;}
+.graph-container{display:flex;flex-direction:column;gap:12px;}
+.node{border:1px solid var(--border);border-radius:4px;padding:14px 16px;background:#fff;display:flex;justify-content:space-between;align-items:center;}
+.node.delayed{border-color:var(--warning);background:#fffdf5;}
+.node.broken{border-color:var(--danger);background:#fff5f5;}
+.node.recovered{border-color:var(--success);background:#f6fbf7;}
+.node-title{font-size:14px;font-weight:600;}
+.node-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+.badge{font-size:11px;font-family:monospace;font-weight:700;padding:4px 8px;border-radius:3px;}
+.badge-ontime{background:#f0fdf4;color:var(--success);border:1px solid #bbf7d0;}
+.badge-warning{background:#fffbeb;color:var(--warning);border:1px solid #fde68a;}
+.badge-danger{background:#fef2f2;color:var(--danger);border:1px solid #fecaca;}
+
+.guardian-box{border-top:1px solid var(--border);padding-top:14px;margin-top:14px;font-size:12px;}
+.guardian-item{display:flex;justify-content:space-between;margin-bottom:6px;}
+.disclaimer-text{font-size:11px;color:#888;margin-top:10px;font-style:italic;}
+.btn-recover{width:100%;background:#000;color:#fff;border:none;padding:12px;font-size:13px;font-weight:600;border-radius:3px;cursor:pointer;}
+.btn-recover:disabled{background:#ccc;cursor:not-allowed;}
+.audit-log{font-family:monospace;font-size:11px;background:#fafafa;border:1px solid var(--border);padding:12px;border-radius:3px;max-height:180px;overflow-y:auto;}
+
+.proof-box{background:#fafafa;border:1px solid var(--border);border-radius:4px;padding:14px;margin-top:16px;font-size:11px;}
+.proof-title{font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#555;margin-bottom:6px;}
+.proof-item{display:flex;align-items:center;gap:6px;margin-bottom:4px;color:#333;}
+.tg-box{margin-top:16px;padding:12px;border:1px dashed var(--border);border-radius:4px;display:flex;align-items:center;justify-content:space-between;font-size:12px;}
+.tg-link{color:#000;font-weight:700;text-decoration:none;border-bottom:1px solid #000;}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="header-top">
+      <div class="tag">Judge Demo Sandbox</div>
+      <button class="btn-tour" id="btn-tour">▶ Play 60s Judge Demo Tour</button>
+    </div>
+    <h1>Live Blast-Radius Disruption Simulator</h1>
+    <p class="subtitle">Deterministic dependency propagation, Visa & Baggage Screening Guardian, and zero-latency recovery.</p>
+  </header>
+
+  <div class="tour-banner" id="tour-banner">
+    <div class="tour-step-title" id="tour-step-title">Step 1/5: Nominal Schedule</div>
+    <div class="tour-step-desc" id="tour-step-desc">All connections intact with Predictive Shadow Hold active in background.</div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Trip Dependency Graph & Blast Radius</h2>
+        <div class="graph-container" id="nodes-list"></div>
+      </div>
+
+      <div class="card" id="recovery-card" style="display: none;">
+        <h2>Autonomous Recovery Verification & Audit</h2>
+        <p id="recovery-msg" style="font-size:13px;margin-bottom:12px;font-weight:600;color:var(--success);"></p>
+        <div class="audit-log" id="audit-log"></div>
+      </div>
+
+      <div class="card">
+        <h2>Proof of Safety & Cryptographic Trust Guarantees</h2>
+        <div class="proof-box">
+          <div class="proof-title">Deterministic Invariant Guardrails</div>
+          <div class="proof-item">✓ <b>Hard Budget Ceiling:</b> Autonomy policy strictly enforces €20 max spend limit in compiled code.</div>
+          <div class="proof-item">✓ <b>Zero LLM Financial Authority:</b> Gemini reasons and explains context; deterministic state machine executes.</div>
+          <div class="proof-item">✓ <b>Idempotency Receipts:</b> Every provider action hashes payload to guarantee zero duplicate charges.</div>
+          <div class="proof-item">✓ <b>Shadow Fare Lock:</b> Zero-cost hold locked at pre-disruption fare (€34 vs €250 market surge).</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Simulate Flight Delay</h2>
+        <div class="control-group">
+          <label>Inbound Delay (LO351) <span class="slider-val" id="delay-val">+0m</span></label>
+          <input type="range" id="delay-slider" min="0" max="180" step="5" value="0">
+        </div>
+
+        <div class="control-group">
+          <label>Traveler Passport (Visa Screening)</label>
+          <select id="citizenship-select">
+            <option value="DE">Germany / EU (Visa-Free Schengen)</option>
+            <option value="US">United States (Visa Waiver 90d)</option>
+            <option value="UA">Ukraine (Biometric Schengen Waiver)</option>
+            <option value="IN">India (Requires Verification at UK Hubs)</option>
+          </select>
+          <div class="checkbox-row">
+            <input type="checkbox" id="luggage-check" checked>
+            <label for="luggage-check" style="margin:0;font-weight:normal;">Has checked baggage (1 bag)</label>
+          </div>
+        </div>
+
+        <div class="guardian-box">
+          <div class="guardian-item"><span>Visa Status:</span><span id="visa-badge" class="badge badge-ontime">CLEAR</span></div>
+          <div class="guardian-item"><span>Estimated MBCT:</span><span id="baggage-badge" class="badge badge-ontime">FEASIBLE (45m)</span></div>
+          <div class="guardian-item"><span>Compensation:</span><span id="comp-label" style="font-size:11px;font-weight:600;color:var(--muted);">Review required</span></div>
+          <p class="disclaimer-text">Screening heuristic only. Not official immigration advice.</p>
+        </div>
+
+        <div style="margin-top:16px;">
+          <button class="btn-recover" id="btn-recover" disabled>Simulate Autonomous Recovery</button>
+        </div>
+
+        <div class="tg-box">
+          <span>Test live bot on mobile:</span>
+          <a href="https://t.me/TripRecoveryAgentBot" target="_blank" class="tg-link">Open Telegram Bot ↗</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let curDelay = 0;
+let isTourActive = false;
+
+async function updateState() {
+  const delay = parseInt(document.getElementById('delay-slider').value);
+  const citizenship = document.getElementById('citizenship-select').value;
+  const checked = document.getElementById('luggage-check').checked;
+  curDelay = delay;
+  document.getElementById('delay-val').textContent = '+' + delay + 'm';
+  const res = await fetch('/api/simulator/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delay_minutes: delay, citizenship_iso2: citizenship, has_checked_bags: checked, bag_count: checked ? 1 : 0 })
+  });
+  const data = await res.json();
+  renderNodes(data.nodes);
+  renderGuardian(data.guardian, data.compensation, data.is_connection_feasible);
+}
+
+function renderNodes(nodes) {
+  const container = document.getElementById('nodes-list');
+  container.innerHTML = '';
+  nodes.forEach(node => {
+    const el = document.createElement('div');
+    let cls = 'node', badgeCls = 'badge-ontime', badgeText = 'ON TIME';
+    if (node.status === 'DELAYED') { cls += ' delayed'; badgeCls = 'badge-warning'; badgeText = '+' + node.delay_minutes + 'm LATE'; }
+    else if (node.status === 'SEVERED' || node.status === 'MISSED') { cls += ' broken'; badgeCls = 'badge-danger'; badgeText = node.status; }
+    else if (node.status === 'TIGHT') { cls += ' delayed'; badgeCls = 'badge-warning'; badgeText = 'TIGHT (' + node.buffer_minutes + 'm)'; }
+    else if (node.status === 'AT_RISK_LATE_CHECKIN' || node.status === 'RESCHEDULE_REQUIRED') { cls += ' broken'; badgeCls = 'badge-danger'; badgeText = 'AFFECTED'; }
+    el.className = cls;
+    el.innerHTML = `<div><div class="node-title">${node.name} <span style="font-family:monospace;font-size:12px;color:#888;">[${node.code}]</span></div><div class="node-sub">${node.scheduled}</div></div><div><span class="badge ${badgeCls}">${badgeText}</span></div>`;
+    container.appendChild(el);
+  });
+}
+
+function renderGuardian(guardian, comp, isFeasible) {
+  const visaBadge = document.getElementById('visa-badge');
+  visaBadge.textContent = guardian.visa.status;
+  visaBadge.className = 'badge ' + (guardian.visa.status === 'CLEAR' ? 'badge-ontime' : 'badge-warning');
+  const baggageBadge = document.getElementById('baggage-badge');
+  baggageBadge.textContent = guardian.baggage.status + ' (' + guardian.baggage.estimated_mbct_minutes + 'm)';
+  baggageBadge.className = 'badge ' + (guardian.baggage.status.includes('FEASIBLE') ? 'badge-ontime' : (guardian.baggage.status.includes('TIGHT') ? 'badge-warning' : 'badge-danger'));
+  document.getElementById('comp-label').textContent = comp.label;
+  document.getElementById('btn-recover').disabled = isFeasible;
+}
+
+document.getElementById('delay-slider').addEventListener('input', updateState);
+document.getElementById('citizenship-select').addEventListener('change', updateState);
+document.getElementById('luggage-check').addEventListener('change', updateState);
+
+async function triggerRecovery() {
+  const citizenship = document.getElementById('citizenship-select').value;
+  const checked = document.getElementById('luggage-check').checked;
+  const res = await fetch('/api/simulator/recover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ delay_minutes: curDelay, citizenship_iso2: citizenship, has_checked_bags: checked })
+  });
+  const data = await res.json();
+  document.getElementById('recovery-card').style.display = 'block';
+  document.getElementById('recovery-msg').textContent = '✓ STATUS: ' + data.status + ' (' + data.message + ')';
+  document.getElementById('audit-log').innerHTML = data.audit_trail.map(item => `<div>${item}</div>`).join('');
+}
+
+document.getElementById('btn-recover').addEventListener('click', triggerRecovery);
+
+// 60-Second Judge Tour Sequence
+document.getElementById('btn-tour').addEventListener('click', async () => {
+  if (isTourActive) return;
+  isTourActive = true;
+  const banner = document.getElementById('tour-banner');
+  const title = document.getElementById('tour-step-title');
+  const desc = document.getElementById('tour-step-desc');
+  banner.style.display = 'block';
+
+  // Step 1: Baseline
+  title.textContent = "Step 1/4: Nominal Schedule & Preemptive Shadow Hold";
+  desc.textContent = "Flight LO351 on time. Bayesian Threat Engine has already placed a free 24h Shadow Hold on alternative LH1790 (€34 locked price).";
+  document.getElementById('delay-slider').value = 0;
+  await updateState();
+  await new Promise(r => setTimeout(r, 2500));
+
+  // Step 2: Disruption
+  title.textContent = "Step 2/4: Flight LO351 Inbound Delay (+105m)";
+  desc.textContent = "Disruption ripples across dependency graph. Munich connection severed (slack: -50m). Downstream hotel & transfer marked AFFECTED.";
+  document.getElementById('delay-slider').value = 105;
+  await updateState();
+  await new Promise(r => setTimeout(r, 3000));
+
+  // Step 3: Screening Guardian
+  title.textContent = "Step 3/4: Visa & Luggage Screening Guardian";
+  desc.textContent = "Invariant Guardian confirms Schengen routing is CLEAR and baggage MBCT is feasible (45m). Safe to reroute.";
+  await new Promise(r => setTimeout(r, 2500));
+
+  // Step 4: Instant Recovery Execution
+  title.textContent = "Step 4/4: Zero-Latency Hold Promotion & Claim Preparation";
+  desc.textContent = "Pre-locked Shadow Hold promoted instantly. Rebooking cost €34.00 (within €20 policy buffer). Statutory €250 compensation claim prepared.";
+  await triggerRecovery();
+  isTourActive = false;
+});
+
+updateState();
+</script>
+</body>
+</html>

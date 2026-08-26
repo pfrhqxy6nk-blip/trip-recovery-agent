@@ -9,6 +9,9 @@ from app.models.domain import (
     TravelItem,
     Trip,
 )
+from app.models.money import Money
+from app.models.policy import AutonomyPolicy, PolicyCandidate, PolicyDecision
+from app.models.recovery import ApprovalRequest, PlannedAction, RecoveryOption, RecoveryPlan
 
 __all__ = [
     "Action",
@@ -20,4 +23,12 @@ __all__ = [
     "TravelInterpretation",
     "TravelItem",
     "Trip",
+    "Money",
+    "AutonomyPolicy",
+    "PolicyCandidate",
+    "PolicyDecision",
+    "PlannedAction",
+    "RecoveryOption",
+    "RecoveryPlan",
+    "ApprovalRequest",
 ]

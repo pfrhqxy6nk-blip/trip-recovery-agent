@@ -1,0 +1,23 @@
+{
+  "name": "landing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "test:browser": "node --test tests/browser-smoke.mjs",
+    "test:visual": "node tests/capture-visual.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "5.0.4",
+    "playwright": "^1.58.2",
+    "vite": "^6.4.3"
+  }
+}

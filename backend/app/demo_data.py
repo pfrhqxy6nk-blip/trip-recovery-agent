@@ -89,3 +89,21 @@ def build_demo_trip() -> Trip:
             ),
         ],
     )
+
+
+def build_owned_demo_trip(*, owner_user_id: str, trip_id: str) -> Trip:
+    """Create an isolated pilot copy without sharing another traveler's state."""
+
+    template = build_demo_trip()
+    return template.model_copy(
+        update={
+            "trip_id": trip_id,
+            "owner_user_id": owner_user_id,
+            "items": [item.model_copy(update={"trip_id": trip_id}) for item in template.items],
+            "dependencies": [
+                dependency.model_copy(update={"trip_id": trip_id})
+                for dependency in template.dependencies
+            ],
+        },
+        deep=True,
+    )
