@@ -32,6 +32,8 @@ async def test_simulator_page_returns_html_editorial() -> None:
         assert "text/html" in res.headers["content-type"]
         assert "Live Blast-Radius Simulator" in res.text
         assert "Screening Guardian" in res.text or "Visa & Baggage Screening Guardian" in res.text
+        assert 'href="https://t.me/tripagentai_bot"' in res.text
+        assert "TripRecoveryAgentBot" not in res.text
 
 
 async def test_simulator_evaluate_endpoint() -> None:
