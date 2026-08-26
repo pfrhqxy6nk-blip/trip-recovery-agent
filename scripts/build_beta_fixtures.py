@@ -158,10 +158,13 @@ def build_pdf(path: Path) -> None:
     path.write_bytes(pdf)
 
 
-def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "warsaw-munich-lisbon-booking-email.txt").write_text(EMAIL_TEXT, encoding="utf-8")
-    build_pdf(OUT / "warsaw-munich-lisbon-booking.pdf")
+def build_fixtures(output_dir: Path = OUT) -> None:
+    """Build the complete deterministic fixture pack into ``output_dir``."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "warsaw-munich-lisbon-booking-email.txt").write_text(
+        EMAIL_TEXT, encoding="utf-8"
+    )
+    build_pdf(output_dir / "warsaw-munich-lisbon-booking.pdf")
     # Keep the fixture byte-for-byte reproducible. ZipFile otherwise embeds
     # the current wall-clock timestamp, which creates a noisy binary diff on
     # every regeneration and makes the judge pack harder to verify.
@@ -169,15 +172,19 @@ def main() -> None:
     pass_info.create_system = 3
     pass_info.external_attr = 0o644 << 16
     pass_info.compress_type = zipfile.ZIP_DEFLATED
-    with zipfile.ZipFile(OUT / "warsaw-munich-lisbon-demo.pkpass", "w") as archive:
+    with zipfile.ZipFile(output_dir / "warsaw-munich-lisbon-demo.pkpass", "w") as archive:
         archive.writestr(pass_info, json.dumps(PASS_JSON, indent=2) + "\n")
-    (OUT / "airport-board-delay.txt").write_text(
+    (output_dir / "airport-board-delay.txt").write_text(
         "TRIP WATCH BETA FIXTURE - NOT LIVE\n"
         "Synthetic airport-board signal for the judge simulator.\n"
         "LO351 WAW to MUC - arrival delayed by 105 minutes.\n"
         "Observed: 2026-09-08T08:55:00+02:00\n",
         encoding="utf-8",
     )
+
+
+def main() -> None:
+    build_fixtures()
     print(f"Wrote beta fixtures to {OUT}")
 
 

@@ -7,7 +7,22 @@ from pathlib import Path
 import pytest
 from app.agents.itinerary_extractor import ItineraryExtractor
 
+from scripts.build_beta_fixtures import build_fixtures
+
 FIXTURES = Path(__file__).parents[2] / "demo" / "fixtures"
+
+
+def test_beta_fixture_generator_is_byte_reproducible(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    build_fixtures(first)
+    build_fixtures(second)
+
+    first_files = sorted(path.name for path in first.iterdir())
+    second_files = sorted(path.name for path in second.iterdir())
+    assert first_files == second_files
+    for filename in first_files:
+        assert (first / filename).read_bytes() == (second / filename).read_bytes()
 
 
 @pytest.mark.asyncio

@@ -35,7 +35,7 @@ packages = ["backend/app"]
 addopts = "-q"
 asyncio_mode = "auto"
 testpaths = ["backend/tests"]
-pythonpath = ["backend"]
+pythonpath = ["backend", "."]
 
 [tool.ruff]
 line-length = 100
