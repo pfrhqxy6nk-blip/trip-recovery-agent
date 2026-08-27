@@ -975,6 +975,18 @@ class TelegramPlanningService:
 
     @staticmethod
     def _extract_destination(text: str) -> str | None:
+        # Handle the most natural English formulation before the general
+        # "to Paris" matcher below. Without this branch, "go from Kyiv to
+        # Paris" was captured as the destination "go".
+        direct_route = re.search(
+            r"\b(?:go|travel|fly|visit)\s+from\s+.+?\s+(?:to|in)\s+(.+?)"
+            r"(?=\s+(?:for|на)\s+\d+\s*(?:nights?|ноч(?:ей|и|ь)?)|"
+            r"\s+(?:under|budget|за|до|бюджет)\b|,|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if direct_route:
+            return " ".join(direct_route.group(1).split()).strip(" ,") or None
         match = re.search(
             r"(?:хочу(?:\s+поехать)?|поездк\w*|trip|travel)?\s*(?:в|in|to)\s+(.+?)"
             r"(?=\s+(?:на|for)\s+\d+\s*(?:ноч|night|дн|day)|\s+(?:за|under|до|budget|бюджет)\b|"
@@ -996,7 +1008,8 @@ class TelegramPlanningService:
     @staticmethod
     def _extract_origin(text: str) -> str | None:
         match = re.search(
-            r"(?:из|from)\s+(.+?)(?=\s+(?:на|for)\s+\d|\s+\d{4}-\d{2}-\d{2}|,|$)",
+            r"(?:из|from)\s+(.+?)(?=\s+(?:to|в)\s+|\s+(?:на|for)\s+\d|"
+            r"\s+\d{4}-\d{2}-\d{2}|,|$)",
             text,
             re.IGNORECASE,
         )
