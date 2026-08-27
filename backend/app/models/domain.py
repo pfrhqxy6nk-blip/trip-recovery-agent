@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -52,8 +52,14 @@ class TravelItem(DomainModel):
     end_at: datetime
     origin: str | None = None
     destination: str | None = None
+    departure_terminal: str | None = None
+    arrival_terminal: str | None = None
     location: str | None = None
     external_id: str | None = None
+    # Keep the PNR separate from the provider item id (usually a flight number).
+    booking_reference: str | None = Field(default=None, max_length=80)
+    contact_email: str | None = Field(default=None, max_length=254)
+    scheduled_local_date: date | None = None
     flexibility: str = "UNKNOWN"
     status: str = "CONFIRMED"
 
@@ -72,6 +78,9 @@ class Dependency(DomainModel):
 
 class Trip(DomainModel):
     trip_id: str
+    owner_user_id: str | None = None
+    intake_hash: str | None = Field(default=None, min_length=64, max_length=64)
+    active_incident_id: str | None = None
     status: TripStatus = TripStatus.HEALTHY
     origin: str
     destination: str

@@ -11,3 +11,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+landing/node_modules/
+landing/dist/
+tmp/

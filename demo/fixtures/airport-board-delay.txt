@@ -1,0 +1,4 @@
+TRIP WATCH BETA FIXTURE - NOT LIVE
+Synthetic airport-board signal for the judge simulator.
+LO351 WAW to MUC - arrival delayed by 105 minutes.
+Observed: 2026-09-08T08:55:00+02:00

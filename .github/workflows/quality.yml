@@ -1,0 +1,78 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+      - name: Backend tests
+        run: python -m pytest -q backend/tests
+      - name: Ruff
+        run: python -m ruff check backend/app backend/tests
+      - name: Strict mypy
+        run: python -m mypy backend/app
+      - name: Canonical autonomous E2E
+        run: bash scripts/run_canonical_e2e.sh
+
+  landing:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+      - run: npm ci
+      - name: Landing build
+        run: npm run build
+      - name: Sites worker tests
+        run: npm run test:sites
+      - name: Browser smoke
+        run: npx playwright install --with-deps chromium && npm run test:browser
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+
+  secret-patterns:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject common credential patterns
+        run: |
+          ! rg -n --hidden --glob '!node_modules/**' --glob '!.git/**' \
+            '(AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|xox[baprs]-)' .
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build immutable container for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: trip-recovery-agent:ci
+      - name: Scan container for high/critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: trip-recovery-agent:ci
+          format: table
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"

@@ -27,6 +27,22 @@ class ProcessOutcome(BaseModel):
     incident_status: IncidentStatus
 
 
+def _bounded_error(error: Exception) -> str:
+    """Persist only an operational class, never provider/request details."""
+
+    error_type = type(error).__name__
+    code = getattr(error, "code", None)
+    if (
+        isinstance(code, str)
+        and code.isascii()
+        and code.isupper()
+        and all(character.isalnum() or character == "_" for character in code)
+        and 1 <= len(code) <= 80
+    ):
+        return f"{error_type}:{code}"
+    return error_type
+
+
 class ImpactAnalysisWorkflow:
     def __init__(
         self,
@@ -87,33 +103,46 @@ class ImpactAnalysisWorkflow:
                 "IMPACT_ANALYSIS_STARTED",
                 extra={"incident_id": incident.incident_id, "correlation_id": correlation_id},
             )
-            incident.status = IncidentStatus.ANALYZING
-            incident.analysis_started_at = now
-            self._touch(incident)
-            await self._repository.save_incident(incident)
+            analyzing = await self._repository.transition_incident(
+                incident_id=incident.incident_id,
+                expected_version=incident.version,
+                from_states={IncidentStatus.RECEIVED},
+                to_state=IncidentStatus.ANALYZING,
+                updated_at=now,
+            )
+            if analyzing is None:
+                raise RuntimeError("incident changed before analysis started")
+            incident = analyzing
 
             trip = await self._repository.get_trip(event.trip_id)
             if trip is None:
                 raise ValueError(f"trip {event.trip_id!r} was not found")
 
             impact = self._impact_engine.calculate(event, trip)
-            incident.deterministic_impact = impact
-            incident.gemini_model_id = self._interpreter.model_id
-            incident.prompt_version = self._interpreter.prompt_version
-            self._touch(incident)
-            await self._repository.save_incident(incident)
+            committed = await self._repository.commit_impact(
+                incident_id=incident.incident_id,
+                expected_version=incident.version,
+                impact=impact,
+                gemini_model_id=self._interpreter.model_id,
+                prompt_version=self._interpreter.prompt_version,
+                updated_at=datetime.now(UTC),
+            )
+            if committed is None:
+                raise RuntimeError("incident changed before impact commit")
+            incident = committed
 
             raw_interpretation = await self._interpreter.interpret(event, trip, impact)
             interpretation = TravelInterpretation.model_validate(raw_interpretation)
-            incident.interpretation = interpretation
-            incident.status = IncidentStatus.PLANNING
-            incident.analysis_completed_at = datetime.now(UTC)
-            incident.last_error = None
-            incident.lease_owner = None
-            incident.lease_expires_at = None
-            self._touch(incident)
-            await self._repository.save_incident(incident)
-            await self._repository.mark_event_completed(event.event_id, incident.updated_at)
+            completed = await self._repository.complete_analysis(
+                event_id=event.event_id,
+                incident_id=incident.incident_id,
+                expected_version=incident.version,
+                interpretation=interpretation,
+                completed_at=datetime.now(UTC),
+            )
+            if completed is None:
+                raise RuntimeError("incident changed before analysis completion")
+            incident = completed
             logger.info(
                 "IMPACT_ANALYSIS_COMPLETED",
                 extra={"incident_id": incident.incident_id, "correlation_id": correlation_id},
@@ -126,22 +155,24 @@ class ImpactAnalysisWorkflow:
                 incident_status=incident.status,
             )
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
-            incident.status = IncidentStatus.FAILED
-            incident.last_error = error
-            incident.lease_owner = None
-            incident.lease_expires_at = None
-            self._touch(incident)
-            await self._repository.mark_event_retryable(
-                event.event_id, incident, error, incident.updated_at
-            )
-            logger.exception(
+            # The durable incident is operational state, not a traceback sink.
+            # Provider messages may contain URLs, credentials, or traveler data.
+            error = _bounded_error(exc)
+            latest = await self._repository.get_incident(incident.incident_id)
+            if latest is not None:
+                latest.status = IncidentStatus.FAILED
+                latest.last_error = error
+                latest.lease_owner = None
+                latest.lease_expires_at = None
+                await self._repository.mark_event_retryable(
+                    event.event_id, latest, error, datetime.now(UTC)
+                )
+            logger.error(
                 "IMPACT_ANALYSIS_FAILED",
-                extra={"incident_id": incident.incident_id, "correlation_id": correlation_id},
+                extra={
+                    "incident_id": incident.incident_id,
+                    "correlation_id": correlation_id,
+                    "error_code": error,
+                },
             )
-            raise WorkflowProcessingError(error) from exc
-
-    @staticmethod
-    def _touch(incident: Incident) -> None:
-        incident.version += 1
-        incident.updated_at = datetime.now(UTC)
+            raise WorkflowProcessingError(error) from None

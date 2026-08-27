@@ -15,6 +15,7 @@ from tests.helpers import InvalidInterpreter, ValidInterpreter, disruption_event
 
 async def test_atomic_claim_has_one_winner() -> None:
     repository = InMemoryIncidentRepository()
+    await repository.seed_trip(build_demo_trip())
     event = disruption_event()
     now = datetime.now(UTC)
     incident_id = ImpactAnalysisWorkflow.stable_incident_id(event.event_id)

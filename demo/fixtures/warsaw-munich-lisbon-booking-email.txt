@@ -1,0 +1,23 @@
+TRIP WATCH BETA FIXTURE - NOT VALID FOR TRAVEL
+
+This synthetic confirmation is for the Trip Watch judge demo only.
+No ticket has been issued and no payment has been taken.
+
+Passenger: Alex Morgan
+Booking reference / PNR: TWDEMO
+
+Flight LO351 - Warsaw (WAW) to Munich (MUC)
+Departure: 2026-09-08T09:10:00+02:00
+Arrival: 2026-09-08T10:45:00+02:00
+Terminal: 1
+
+Flight LH1790 - Munich (MUC) to Lisbon (LIS)
+Departure: 2026-09-08T11:40:00+02:00
+Arrival: 2026-09-08T13:45:00+01:00
+Terminal: 2
+
+Hotel: Hotel Torbraeu, Munich
+Check-in: 2026-09-08T15:00:00+02:00
+Check-out: 2026-09-12T11:00:00+02:00
+
+Transfer: Lisbon Airport pickup, 2026-09-08T14:30:00+01:00
