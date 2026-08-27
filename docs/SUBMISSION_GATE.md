@@ -26,10 +26,10 @@ No public deployment or Devpost submission is performed by this checklist.
 ## Live Telegram acceptance
 
 The bot identity and webhook URL resolve, and Telegram currently reports
-`pending_update_count=0`; however, the latest read-only check on 2026-08-27 also reported
-`last_error_message=Wrong response from the webhook: 500 Internal Server Error`. Treat the
-live path as not green until the hardened image is rolled out and a real owner `/start` smoke
-test clears that error.
+`pending_update_count=0`; however, the latest read-only check on 2026-08-27 also reported a
+recorded `last_error_message=Wrong response from the webhook: 500 Internal Server Error`.
+Treat the live path as not green until the hardened image is rolled out and a real owner
+`/start` smoke test proves valid-update delivery.
 
 Repeatable check from the repository root (loads only the local untracked `.env`):
 `set -a; source .env; set +a; scripts/verify_live_contract.sh`.
@@ -59,9 +59,10 @@ Run this with a fresh Telegram account against the current worker revision:
 - [ ] Roll out the latest hardened image and record its worker/edge revisions and digest in
   `docs/CLOUD_PROOF.md`. The current live services still point at the prior verified image;
   local hardening is covered by the gate below but is not yet a live claim.
-- [ ] Confirm Telegram `getWebhookInfo` has zero pending updates and no webhook error after the
-  fresh owner smoke test. The 2026-08-27 read-only check showed `pending_update_count=0` but a
-  current `500 Internal Server Error`; valid `/start` delivery is still unproven.
+- [ ] Confirm Telegram `getWebhookInfo` has zero pending updates and no recorded webhook error
+  after the fresh owner smoke test. The 2026-08-27 read-only check showed
+  `pending_update_count=0` but a recorded `500 Internal Server Error`; valid `/start` delivery
+  is still unproven.
 - [x] Confirm the worker has only the required Secret Manager, Firestore, Pub/Sub, and
   Vertex permissions; project IAM shows only `roles/datastore.user`, `roles/aiplatform.user`,
   and `roles/pubsub.publisher` for the runtime identity, secrets are resource-scoped, and an

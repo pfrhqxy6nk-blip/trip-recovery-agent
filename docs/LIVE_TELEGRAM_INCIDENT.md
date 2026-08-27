@@ -35,5 +35,5 @@ On 2026-08-24, the active Cloud Run edge was probed without sending a Telegram u
   `malformed Telegram update`, proving the edge-to-private-worker route is live.
 - An unauthenticated request to the worker returned HTTP `403`, proving the IAM boundary.
 - The bot identity remains valid and Telegram reports the Cloud Run URL and
-  `pending_update_count=0`; the same check reports the webhook's current `500 Internal Server
+  `pending_update_count=0`; the same check reports a recorded webhook `500 Internal Server
   Error`, so valid-update delivery is not yet proven.
