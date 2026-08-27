@@ -396,7 +396,10 @@ class TelegramPlanningService:
             return self._preferences_view(updated)
         if callback_data.startswith("plan:select:"):
             return await self._select(
-                telegram_user_id, telegram_chat_id, callback_data.removeprefix("plan:select:")
+                telegram_user_id,
+                telegram_chat_id,
+                callback_data.removeprefix("plan:select:"),
+                now=now,
             )
         if callback_data == "plan:save":
             return await self._save_plan(telegram_user_id, telegram_chat_id, now=now)
@@ -445,7 +448,12 @@ class TelegramPlanningService:
         return self._options_view(saved)
 
     async def _select(
-        self, telegram_user_id: str, telegram_chat_id: str, option_id: str
+        self,
+        telegram_user_id: str,
+        telegram_chat_id: str,
+        option_id: str,
+        *,
+        now: datetime,
     ) -> TelegramView:
         draft = await self._repository.get_trip_draft(telegram_user_id)
         if draft is None or draft.telegram_chat_id != telegram_chat_id:
@@ -458,26 +466,9 @@ class TelegramPlanningService:
         )
         if saved is None:
             raise TelegramPlanningError("your planning draft changed; please try again")
-        option = next(item for item in saved.planning_options if item.option_id == option_id)
-        details = self._option_details(option)
-        return TelegramView(
-            text=(
-                f"<b>{escape(option.title)}</b> selected.\n\n{details}\n\n"
-                f"{escape(option.summary)}\n\n"
-                "This is a planning estimate, not a booking. Forward the real ticket, "
-                "booking email, screenshot or .pkpass and I will connect it to this plan "
-                "and start autonomous monitoring."
-            ),
-            parse_mode="HTML",
-            button_rows=[
-                [
-                    TelegramButton(
-                        text="Forward the real booking", callback_data="trip:forward_help"
-                    )
-                ],
-                [TelegramButton(text="Save this plan", callback_data="plan:save")],
-            ],
-        )
+        # Choosing a candidate is the traveller's planning confirmation. Save
+        # it directly instead of inserting two more button screens.
+        return await self._save_plan(telegram_user_id, telegram_chat_id, now=now)
 
     async def _save_plan(
         self, telegram_user_id: str, telegram_chat_id: str, *, now: datetime
@@ -518,8 +509,7 @@ class TelegramPlanningService:
                 f"as a planned trip ({planned_trip_id}). Forward the actual booking when you "
                 "have it; then I will replace the estimate with verified itinerary data and "
                 "activate watchpoints."
-            ),
-            buttons=[TelegramButton(text="Forward booking", callback_data="trip:forward_help")],
+            )
         )
 
     async def _persist_planned_trip(
@@ -642,14 +632,10 @@ class TelegramPlanningService:
                 "Tell me the trip you want to plan in one line — for example:\n\n"
                 "I want to go to Paris for 6 nights, budget €600. Add a departure city or "
                 "travel dates if you have them.\n\n"
-                "I will return three Search-grounded estimates, even with flexible dates. They "
-                "are not bookings; only a "
-                "real forwarded reservation can activate monitoring."
-            ),
-            button_rows=[
-                [TelegramButton(text="Enable personal ideas", callback_data="plan:preferences")],
-                [TelegramButton(text="Add a booked itinerary", callback_data="trip:menu")],
-            ],
+                "When live Google Search is available, I will return three sourced options. "
+                "Otherwise I show clearly labelled estimates with search links. They are not "
+                "bookings; only a real forwarded reservation activates monitoring."
+            )
         )
 
     @staticmethod
@@ -665,7 +651,7 @@ class TelegramPlanningService:
                 else f"{request.start_date} → {request.end_date} · budget €{request.budget_eur}"
             ),
             "",
-            "Choose a route. These are planning estimates, not bookings.",
+            "Choose one to save it as a plan. These are estimates, not bookings.",
         ]
         if not any(option.availability == "LIVE" for option in draft.planning_options):
             text.insert(
@@ -685,12 +671,7 @@ class TelegramPlanningService:
             text.append(TelegramPlanningService._option_details(option))
             text.append(escape(option.resilience_note))
             if option.source_links:
-                # Telegram renders HTTPS URLs as tappable links. Show the
-                # actual evidence instead of a vague “Search-grounded” badge.
-                text.append(
-                    "Sources: "
-                    + " · ".join(escape(link) for link in option.source_links[:2])
-                )
+                text.append(TelegramPlanningService._source_links_view(option))
             text.append(escape(option.summary))
             rows.append(
                 [
@@ -725,6 +706,23 @@ class TelegramPlanningService:
             f"{escape(stay.cancellation)}"
         )
         return f"{transport_line}\n{stay_line}\nTotal €{option.estimated_total_eur} · estimate"
+
+    @staticmethod
+    def _source_links_view(option: TravelPlanOption) -> str:
+        """Keep evidence tappable without dumping long raw URLs into chat."""
+        links: list[tuple[str, str]] = []
+        if option.transport is not None:
+            links.append(("Transport source", option.transport.booking_url))
+        if option.stay is not None:
+            links.append(("Stay source", option.stay.booking_url))
+        known_urls = {url for _, url in links}
+        for source in option.source_links:
+            if source not in known_urls:
+                links.append(("Search source", source))
+                known_urls.add(source)
+        return "Sources: " + " · ".join(
+            f'<a href="{escape(url, quote=True)}">{label}</a>' for label, url in links[:2]
+        )
 
     @staticmethod
     def _preferences_view(traveler: TravelerProfile) -> TelegramView:

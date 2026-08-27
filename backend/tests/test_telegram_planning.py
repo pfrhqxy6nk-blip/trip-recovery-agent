@@ -53,16 +53,12 @@ async def test_plan_is_persistent_and_never_presented_as_a_booking() -> None:
         callback_data="plan:select:balanced",
         now=now,
     )
-    assert "selected" in selected.text
-    assert "real ticket" in selected.text
+    assert "Plan saved" in selected.text
+    assert "actual booking" in selected.text
+    assert not selected.button_rows
     persisted = await repository.get_trip_draft("101")
     assert persisted is not None and persisted.selected_plan_id == "balanced"
-    saved = await service.handle(
-        telegram_user_id="101", telegram_chat_id="202", callback_data="plan:save", now=now
-    )
-    assert "Plan saved" in saved.text
-    persisted = await repository.get_trip_draft("101")
-    assert persisted is not None and persisted.planning_saved_at == now
+    assert persisted.planning_saved_at == now
     assert persisted.planned_trip_id is not None
     planned_trip = await repository.get_trip(persisted.planned_trip_id)
     assert planned_trip is not None and planned_trip.status == TripStatus.PLANNED

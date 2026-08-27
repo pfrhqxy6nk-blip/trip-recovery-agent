@@ -75,9 +75,9 @@ The planner returns three compact, comparable cards (flight/train/bus + hotel, t
 dates and times, cancellation conditions and tappable HTTPS sources). Live cards are labelled
 `Search-grounded` only when Vertex AI returns Google Search grounding evidence. If Search or
 quota is unavailable, the same shape is returned as an explicit `estimate` and is never shown
-as current inventory. Choosing **Save this plan** persists a `PLANNED` trip; it does not book,
-charge or start disruption recovery. A later **Forward booking** intake is the separate handoff
-that creates the confirmed itinerary and its watchpoints.
+as current inventory. Choosing a route immediately persists a `PLANNED` trip; it does not book,
+charge or start disruption recovery. Forwarding the actual booking in the chat is the separate
+handoff that creates the confirmed itinerary and its watchpoints.
 
 The live Telegram bot endpoint is wired through the public Cloud Run edge to the private worker;
 the hardened Cloud Function adapter remains available only as a rollback path.
