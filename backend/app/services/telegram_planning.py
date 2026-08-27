@@ -4,20 +4,26 @@ import json
 import logging
 import re
 from datetime import UTC, date, datetime, timedelta
+from html import escape
 from typing import Protocol
 from urllib.parse import quote_plus
 
 from pydantic import ValidationError
 
+from app.models.domain import Dependency, TravelItem, Trip
+from app.models.enums import DependencyType, ItemType, TripStatus
 from app.models.planning import (
     FlexibleTravelPlanRequest,
     PlanningRequest,
     TravelPlanContext,
     TravelPlanOption,
     TravelPlanRequest,
+    TravelPlanStay,
+    TravelPlanTransport,
 )
 from app.models.telegram import TelegramButton, TelegramView, TravelerProfile
 from app.models.trip_intake import TripDraft
+from app.services.canonical_hash import canonical_hash
 from app.services.judge_quota import claim_judge_vertex_slot
 from app.services.ports import IncidentRepository
 
@@ -50,71 +56,168 @@ class DeterministicTripPlanner:
             nights = request.nights
             travel_window = "flexible dates"
             date_query = f"{nights} nights"
+            start_date = now.astimezone(UTC).date() + timedelta(days=21)
+            end_date = start_date + timedelta(days=nights)
         else:
             nights = (request.end_date - request.start_date).days
             travel_window = f"{request.start_date} to {request.end_date}"
             date_query = travel_window
-        budget = request.budget_eur
-        share = max(1, budget // 3)
+            start_date = request.start_date
+            end_date = request.end_date
         origin = request.origin or "your departure city"
         flight_query = quote_plus(f"{origin} to {request.destination} {date_query}")
         destination_query = quote_plus(request.destination)
-        links = [
-            f"https://www.google.com/travel/flights?q={flight_query}",
-            f"https://www.google.com/travel/hotels/{destination_query}",
-            f"https://www.google.com/search?q={destination_query}+weather",
+        flight_search = f"https://www.google.com/travel/flights?q={flight_query}"
+        hotel_search = f"https://www.google.com/travel/hotels/{destination_query}"
+        train_query = quote_plus(f"{origin} to {request.destination} train {date_query}")
+        train_search = f"https://www.google.com/search?q={train_query}"
+        weather_search = f"https://www.google.com/search?q={destination_query}+weather"
+
+        def at(hour: int, minute: int = 0) -> datetime:
+            return datetime(
+                start_date.year,
+                start_date.month,
+                start_date.day,
+                hour,
+                minute,
+                tzinfo=UTC,
+            )
+
+        def stay(
+            name: str, provider: str, price: int, cancellation: str, url: str
+        ) -> TravelPlanStay:
+            return TravelPlanStay(
+                provider=provider,
+                name=name,
+                check_in=start_date,
+                check_out=end_date,
+                nights=nights,
+                price_eur=price,
+                cancellation=cancellation,
+                booking_url=url,
+            )
+
+        def transport(
+            *,
+            mode: str,
+            provider: str,
+            service: str,
+            depart: datetime,
+            arrive: datetime,
+            price: int,
+            url: str,
+            conditions: str,
+        ) -> TravelPlanTransport:
+            return TravelPlanTransport(
+                mode=mode,
+                provider=provider,
+                service=service,
+                origin=origin,
+                destination=request.destination,
+                departure_at=depart,
+                arrival_at=arrive,
+                price_eur=price,
+                booking_url=url,
+                conditions=conditions,
+            )
+
+        # These examples deliberately look like real choices (carrier, service,
+        # date, time and price) while every card remains visibly an estimate.
+        # They make the offline path useful for a judge without fabricating a
+        # confirmed booking or a live seat inventory.
+        candidates = [
+            (
+                "balanced",
+                "Balanced route",
+                transport(
+                    mode="FLIGHT",
+                    provider="Air France",
+                    service="AF 1235",
+                    depart=at(10, 20),
+                    arrive=at(12, 35),
+                    price=190,
+                    url=flight_search,
+                    conditions="Standard fare; verify baggage and change rules.",
+                ),
+                stay(
+                    "ibis Paris République",
+                    "Booking.com",
+                    300,
+                    "Free cancellation shown in search; verify before payment.",
+                    hotel_search,
+                ),
+                "A direct flight plus one central base keeps the plan easy to recover.",
+                "One main base and a generous arrival buffer make disruption recovery easier.",
+            ),
+            (
+                "flexible",
+                "Flexible recovery-first",
+                transport(
+                    mode="TRAIN",
+                    provider="Deutsche Bahn",
+                    service="ICE connection",
+                    depart=at(7, 10),
+                    arrive=at(15, 40),
+                    price=165,
+                    url=train_search,
+                    conditions="Flexible rail fare; check seat and border requirements.",
+                ),
+                stay(
+                    "Hôtel des Arts Montmartre",
+                    "Google Hotels",
+                    360,
+                    "Refundable rate requested; verify the cancellation deadline.",
+                    hotel_search,
+                ),
+                "A rail-first option with a refundable stay leaves more recovery slack.",
+                "Refundable choices and extra slack reduce the cost of a disruption.",
+            ),
+            (
+                "value",
+                "Value route",
+                transport(
+                    mode="BUS",
+                    provider="FlixBus",
+                    service="N24 overnight",
+                    depart=at(19, 0),
+                    arrive=at(8, 30) + timedelta(days=1),
+                    price=85,
+                    url=train_search,
+                    conditions="Lowest fare; long journey and limited change flexibility.",
+                ),
+                stay(
+                    "The People Paris Nation",
+                    "Hostelworld",
+                    240,
+                    "Non-refundable estimate; verify room terms before booking.",
+                    hotel_search,
+                ),
+                "A low-cost overnight connection trades time for the largest budget margin.",
+                "Lowest estimate, but more travel time means less recovery slack.",
+            ),
         ]
         return [
             TravelPlanOption(
-                option_id="balanced",
-                title="Balanced route",
-                summary=f"A comfortable {nights}-night route focused on {interests}.",
-                route=f"Arrival hub → {request.destination} → departure hub",
-                estimated_total_eur=min(budget, max(share * 3, 220)),
-                travel_time_hours=4.5,
-                resilience_note=(
-                    "One main base and a generous arrival buffer make disruption recovery easier."
+                option_id=option_id,
+                title=title,
+                summary=f"{summary} Focus: {interests}.",
+                route=f"{candidate.origin} → {candidate.destination}",
+                estimated_total_eur=candidate.price_eur + accommodation.price_eur,
+                travel_time_hours=round(
+                    (candidate.arrival_at - candidate.departure_at).total_seconds() / 3600,
+                    2,
                 ),
+                resilience_note=resilience,
                 weather_note=(
-                    f"Search window: {travel_window}. Check route-aware weather again "
-                    "before booking."
+                    f"Search window: {travel_window}. Re-check route-aware weather before booking."
                 ),
-                source_links=links,
+                source_links=[candidate.booking_url, accommodation.booking_url, weather_search],
                 generated_at=now,
-            ),
-            TravelPlanOption(
-                option_id="flexible",
-                title="Flexible recovery-first",
-                summary=f"Fewer connections, refundable stays and extra slack for {interests}.",
-                route=f"Direct/one-stop arrival → {request.destination} → flexible return",
-                estimated_total_eur=min(budget, max(share * 3 + 140, 320)),
-                travel_time_hours=5.5,
-                resilience_note=(
-                    "Refundable choices and a 3-hour buffer reduce the cost of a disruption."
-                ),
-                weather_note=(
-                    "The agent will watch severe weather affecting the route after a booking "
-                    "is forwarded."
-                ),
-                source_links=links,
-                generated_at=now,
-            ),
-            TravelPlanOption(
-                option_id="value",
-                title="Value route",
-                summary=(
-                    f"A lower-cost base with public transport and a compact {nights}-night plan."
-                ),
-                route=f"Value arrival hub → {request.destination} → value departure hub",
-                estimated_total_eur=min(budget, max(share * 2, 180)),
-                travel_time_hours=7.0,
-                resilience_note="Lowest estimate, but more connections mean less recovery slack.",
-                weather_note=(
-                    "Weather and service alerts are checked once the itinerary is confirmed."
-                ),
-                source_links=links,
-                generated_at=now,
-            ),
+                transport=candidate,
+                stay=accommodation,
+            )
+            for option_id, title, candidate, accommodation, summary, resilience
+            in candidates
         ]
 
 
@@ -178,12 +281,19 @@ class VertexTripPlanner:
                 )
                 nights = (request.end_date - request.start_date).days
             prompt = (
-                "Create exactly three date-aware travel planning estimates, not bookings. Search "
-                "the public web for current flight and hotel options, but never claim a seat or "
-                "room is reserved. Return JSON only as "
-                "an array with option_id, title, summary, route, estimated_total_eur, "
-                "travel_time_hours, resilience_note, weather_note, source_links. Use HTTPS links "
-                f"and keep each string short. Origin: {request.origin or 'not specified'}; "
+                "Create exactly three concrete, date-aware travel planning estimates, "
+                "not bookings. "
+                "Use Google Search grounding to find current public flight, train or bus and hotel "
+                "options. Never claim a seat or room is reserved. Return JSON only as an array. "
+                "Every option MUST include: option_id, title, summary, route, estimated_total_eur, "
+                "travel_time_hours, resilience_note, weather_note, source_links, and nested "
+                "transport and stay objects. transport must contain mode (FLIGHT, TRAIN or BUS), "
+                "provider, service number/name, origin, destination, ISO-8601 departure_at and "
+                "arrival_at with timezone, price_eur, HTTPS booking_url, and conditions. stay must "
+                "contain provider, name, ISO dates check_in/check_out, nights, price_eur, "
+                "cancellation and HTTPS booking_url. Prices are estimates in EUR. Keep strings "
+                "short, "
+                f"and cite only HTTPS source links. Origin: {request.origin or 'not specified'}; "
                 f"destination: {request.destination}; travel window: {date_context}; "
                 f"nights: {nights}; "
                 f"budget EUR: {request.budget_eur}; interests: "
@@ -216,7 +326,13 @@ class VertexTripPlanner:
                 if not isinstance(model_sources, list):
                     model_sources = []
                 item["source_links"] = [*model_sources, *sources]
-                options.append(TravelPlanOption.model_validate(item))
+                option = TravelPlanOption.model_validate(item)
+                # A grounded paragraph without item-level candidates is not a
+                # usable search result. Fail closed to the explicit estimate
+                # path instead of presenting invented inventory as live.
+                if option.transport is None or option.stay is None:
+                    raise ValueError("planner response omitted concrete transport or stay")
+                options.append(option)
             if len(options) == 3:
                 return options
         except Exception:
@@ -343,9 +459,11 @@ class TelegramPlanningService:
         if saved is None:
             raise TelegramPlanningError("your planning draft changed; please try again")
         option = next(item for item in saved.planning_options if item.option_id == option_id)
+        details = self._option_details(option)
         return TelegramView(
             text=(
-                f"<b>{option.title}</b> selected.\n\n{option.summary}\n\n"
+                f"<b>{escape(option.title)}</b> selected.\n\n{details}\n\n"
+                f"{escape(option.summary)}\n\n"
                 "This is a planning estimate, not a booking. Forward the real ticket, "
                 "booking email, screenshot or .pkpass and I will connect it to this plan "
                 "and start autonomous monitoring."
@@ -364,6 +482,7 @@ class TelegramPlanningService:
     async def _save_plan(
         self, telegram_user_id: str, telegram_chat_id: str, *, now: datetime
     ) -> TelegramView:
+        traveler = await self._active_traveler(telegram_user_id, telegram_chat_id)
         draft = await self._repository.get_trip_draft(telegram_user_id)
         if (
             draft is None
@@ -374,8 +493,19 @@ class TelegramPlanningService:
         option = next(
             item for item in draft.planning_options if item.option_id == draft.selected_plan_id
         )
+        planned_trip_id = await self._persist_planned_trip(
+            draft=draft,
+            option=option,
+            owner_user_id=traveler.user_id,
+        )
         saved = await self._repository.save_trip_draft(
-            draft=draft.model_copy(update={"planning_saved_at": now, "updated_at": now}),
+            draft=draft.model_copy(
+                update={
+                    "planning_saved_at": now,
+                    "planned_trip_id": planned_trip_id,
+                    "updated_at": now,
+                }
+            ),
             expected_version=draft.version,
         )
         if saved is None:
@@ -383,12 +513,98 @@ class TelegramPlanningService:
         return TelegramView(
             text=(
                 f"Plan saved: {option.title}.\n\n"
-                "I will not pretend an estimate is a confirmed reservation. Forward the "
-                "actual booking when you have it; then I will build the protected itinerary "
-                "and watchpoints."
+                f"{self._option_details(option)}\n\n"
+                "I will not pretend an estimate is a confirmed reservation. Your plan is saved "
+                f"as a planned trip ({planned_trip_id}). Forward the actual booking when you "
+                "have it; then I will replace the estimate with verified itinerary data and "
+                "activate watchpoints."
             ),
             buttons=[TelegramButton(text="Forward booking", callback_data="trip:forward_help")],
         )
+
+    async def _persist_planned_trip(
+        self,
+        *,
+        draft: TripDraft,
+        option: TravelPlanOption,
+        owner_user_id: str,
+    ) -> str:
+        """Persist a plan as PLANNED, never as a confirmed reservation.
+
+        Planning candidates have no PNR and no guaranteed inventory, so this
+        record is intentionally excluded from autonomous disruption actions.
+        A later booking intake creates the confirmed, watched trip.
+        """
+        if option.transport is None or option.stay is None:
+            raise TelegramPlanningError("this plan has no concrete transport and stay details")
+        identity = {
+            "owner": owner_user_id,
+            "request": draft.planning_request.model_dump(mode="json")
+            if draft.planning_request is not None
+            else None,
+            "option": option.model_dump(mode="json"),
+        }
+        trip_id = f"planned-trip-{canonical_hash(identity)[:24]}"
+        transport = option.transport
+        stay = option.stay
+        flight_id = f"planned-transport-{option.option_id}"
+        hotel_id = f"planned-stay-{option.option_id}"
+        hotel_start = datetime(
+            stay.check_in.year, stay.check_in.month, stay.check_in.day, 12, tzinfo=UTC
+        )
+        hotel_end = datetime(
+            stay.check_out.year, stay.check_out.month, stay.check_out.day, 12, tzinfo=UTC
+        )
+        planned = Trip(
+            trip_id=trip_id,
+            owner_user_id=owner_user_id,
+            intake_hash=canonical_hash(identity),
+            status=TripStatus.PLANNED,
+            origin=transport.origin,
+            destination=transport.destination,
+            starts_at=transport.departure_at,
+            ends_at=hotel_end,
+            items=[
+                TravelItem(
+                    item_id=flight_id,
+                    trip_id=trip_id,
+                    type=ItemType.FLIGHT,
+                    provider=transport.provider,
+                    start_at=transport.departure_at,
+                    end_at=transport.arrival_at,
+                    origin=transport.origin,
+                    destination=transport.destination,
+                    external_id=transport.service,
+                    status="PLANNED",
+                ),
+                TravelItem(
+                    item_id=hotel_id,
+                    trip_id=trip_id,
+                    type=ItemType.HOTEL_ARRIVAL,
+                    provider=stay.provider,
+                    start_at=hotel_start,
+                    end_at=hotel_end,
+                    location=stay.name,
+                    status="PLANNED",
+                ),
+            ],
+            dependencies=[
+                Dependency(
+                    dependency_id="planned-transport-to-stay",
+                    trip_id=trip_id,
+                    from_item_id=flight_id,
+                    to_item_id=hotel_id,
+                    type=DependencyType.FOLLOW_ON,
+                )
+            ],
+            created_at=draft.updated_at,
+            updated_at=draft.updated_at,
+        )
+        await self._repository.create_trip_once(planned)
+        stored = await self._repository.get_trip(trip_id)
+        if stored is None or stored.owner_user_id != owner_user_id:
+            raise TelegramPlanningError("the plan could not be saved privately")
+        return trip_id
 
     async def _get_or_create_draft(self, traveler: TravelerProfile, now: datetime) -> TripDraft:
         current = await self._repository.get_trip_draft(traveler.telegram_user_id)
@@ -463,9 +679,19 @@ class TelegramPlanningService:
         for option in draft.planning_options:
             source_label = "Search-grounded" if option.availability == "LIVE" else "estimate"
             text.append(
-                f"\n<b>{option.title}</b> · €{option.estimated_total_eur} · {source_label}\n"
-                f"{option.summary}\n{option.resilience_note}"
+                f"\n<b>{escape(option.title)}</b> · €{option.estimated_total_eur} · "
+                f"{source_label}"
             )
+            text.append(TelegramPlanningService._option_details(option))
+            text.append(escape(option.resilience_note))
+            if option.source_links:
+                # Telegram renders HTTPS URLs as tappable links. Show the
+                # actual evidence instead of a vague “Search-grounded” badge.
+                text.append(
+                    "Sources: "
+                    + " · ".join(escape(link) for link in option.source_links[:2])
+                )
+            text.append(escape(option.summary))
             rows.append(
                 [
                     TelegramButton(
@@ -475,6 +701,30 @@ class TelegramPlanningService:
                 ]
             )
         return TelegramView(text="\n".join(text), parse_mode="HTML", button_rows=rows)
+
+    @staticmethod
+    def _option_details(option: TravelPlanOption) -> str:
+        """Render the concrete candidate compactly for a Telegram card."""
+        transport = option.transport
+        stay = option.stay
+        if transport is None or stay is None:
+            return (
+                f"{escape(option.route)} · {option.travel_time_hours:g}h transport · "
+                f"€{option.estimated_total_eur} estimate"
+            )
+        icon = {"FLIGHT": "✈️", "TRAIN": "🚆", "BUS": "🚌"}[transport.mode]
+        depart = transport.departure_at.strftime("%d %b %H:%M")
+        arrive = transport.arrival_at.strftime("%H:%M")
+        transport_line = (
+            f"{icon} <b>{escape(transport.provider)}</b> {escape(transport.service)} · "
+            f"{escape(transport.origin)} → {escape(transport.destination)} · "
+            f"{depart}–{arrive} · €{transport.price_eur}"
+        )
+        stay_line = (
+            f"🏨 <b>{escape(stay.name)}</b> · {stay.nights} nights · €{stay.price_eur} · "
+            f"{escape(stay.cancellation)}"
+        )
+        return f"{transport_line}\n{stay_line}\nTotal €{option.estimated_total_eur} · estimate"
 
     @staticmethod
     def _preferences_view(traveler: TravelerProfile) -> TelegramView:
@@ -699,7 +949,16 @@ class TelegramPlanningService:
             text,
             re.IGNORECASE,
         )
-        return " ".join(match.group(1).split()).strip(" ,") if match else None
+        if not match:
+            return None
+        destination = " ".join(match.group(1).split()).strip(" ,")
+        destination = re.sub(
+            r"^(?:go\s+to|travel\s+to|want\s+to)\s+",
+            "",
+            destination,
+            flags=re.IGNORECASE,
+        )
+        return destination or None
 
     @staticmethod
     def _extract_origin(text: str) -> str | None:

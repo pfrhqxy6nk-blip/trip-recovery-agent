@@ -205,6 +205,9 @@ async def test_first_user_activation_switches_to_plain_english_chat() -> None:
         assert "Planning" in planning_payload["text"]
         assert "Paris" in planning_payload["text"]
         assert "Live Google Search is temporarily unavailable" in planning_payload["text"]
+        assert "Air France" in planning_payload["text"]
+        assert "ibis Paris République" in planning_payload["text"]
+        assert "AF 1235" in planning_payload["text"]
         assert len(planning_payload["button_rows"]) == 3
     finally:
         await client.aclose()

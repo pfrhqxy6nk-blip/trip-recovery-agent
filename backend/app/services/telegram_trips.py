@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from app.agents.itinerary_extractor import ItineraryExtractor
 from app.demo_data import build_owned_demo_trip
 from app.models.ai_connection import AiConnectionStatus
-from app.models.enums import OnboardingStep
+from app.models.enums import OnboardingStep, TripStatus
 from app.models.readiness import TripDocument
 from app.models.telegram import TelegramButton, TelegramView, TravelerProfile
 from app.models.trip_intake import (
@@ -341,6 +341,17 @@ class TelegramTripService:
         trip = await self._repository.get_trip(result.trip_id)
         if trip is None or trip.owner_user_id != owner_user_id:
             raise TelegramTripError("your itinerary was saved but monitoring could not be verified")
+        # A planning confirmation is an estimate, not a second active trip. Once
+        # the real booking arrives, close the private planned record so status
+        # views and watchlists contain only the verified itinerary.
+        if draft.planned_trip_id:
+            planned = await self._repository.get_trip(draft.planned_trip_id)
+            if planned is not None and planned.owner_user_id == owner_user_id:
+                await self._repository.seed_trip(
+                    planned.model_copy(
+                        update={"status": TripStatus.CLOSED, "updated_at": now}
+                    )
+                )
         first_flight_id = next(
             (item.item_id for item in trip.items if item.type.value == "FLIGHT"), None
         )
@@ -508,6 +519,10 @@ class TelegramTripService:
             )
             plan_label = selected.title if selected is not None else "planning estimate"
             lines.append(f"• Planning target: {draft.planning_request.destination} · {plan_label}")
+            if draft.planned_trip_id:
+                lines.append(
+                    "• Saved as a plan only — forward the real booking to start monitoring"
+                )
         elif draft.planning_context is not None and draft.planning_context.destination:
             lines.append(f"• Planning brief: {draft.planning_context.destination}")
         lines.extend(

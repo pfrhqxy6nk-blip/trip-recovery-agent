@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from html import escape
 
 from app.agents.judge_chat import VertexJudgeChat
-from app.models.enums import OnboardingStep
+from app.models.enums import OnboardingStep, TripStatus
 from app.models.monitoring import MonitoringCoverage
 from app.models.telegram import TelegramButton, TelegramView
 from app.services.ports import IncidentRepository
@@ -170,7 +170,14 @@ class TelegramConversationService:
                 )
             )
         lines = []
+        planned_count = 0
         for trip in trips[:5]:
+            if trip.status == TripStatus.PLANNED:
+                planned_count += 1
+                lines.append(
+                    f"• Saved plan: {trip.origin} → {trip.destination} · not booked yet"
+                )
+                continue
             watchpoints = await self._repository.list_watchpoints(trip.trip_id)
             subscriptions = await self._repository.list_monitoring_subscriptions(trip.trip_id)
             degraded = sum(1 for watchpoint in watchpoints if watchpoint.last_error_at is not None)
@@ -185,7 +192,10 @@ class TelegramConversationService:
                 f"{len(watchpoints)} watchpoints{health}"
             )
         suffix = "\n• More trips are protected." if len(trips) > 5 else ""
-        return TelegramView(text="Your protected trips\n" + "\n".join(lines) + suffix)
+        heading = "Your trips"
+        if planned_count and planned_count == len(trips):
+            heading = "Your saved plans"
+        return TelegramView(text=heading + "\n" + "\n".join(lines) + suffix)
 
     @staticmethod
     def _coverage_view() -> TelegramView:

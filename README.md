@@ -1,8 +1,13 @@
 # Trip Recovery Agent
 
-Trip Recovery Agent is an autonomous recovery layer for trips that are already booked.
-When one part of a journey changes, it calculates the downstream blast radius, repairs
-safe dependencies, and asks the traveler only for consequential decisions.
+Trip Recovery Agent is a Telegram-first travel agent with two explicit paths: plan a new
+trip from a natural-language brief, or protect an itinerary that is already booked. For
+planning, Gemini + Google Search returns concrete transport and hotel candidates with
+prices, times, conditions and source links; confirmation creates a private `PLANNED` record
+without pretending anything was purchased. Forwarding the real PDF, email, screenshot or
+`.pkpass` then replaces the estimate with verified booking data and activates monitoring.
+When one part of a booked journey changes, the agent calculates the downstream blast radius,
+repairs safe dependencies, and asks the traveler only for consequential decisions.
 
 Milestone 01 implements one real vertical slice:
 
@@ -62,6 +67,17 @@ until credentials are injected through Secret Manager. Search grounding remains 
 for public airport, weather, hotel, transfer, and activity signals. Non-recovery signals are
 also delivered proactively to Telegram as durable, source-linked `WATCH_SIGNAL` notices;
 they inform the traveler without silently authorizing a booking change.
+
+### Planning a trip versus protecting a booking
+
+Send a message such as `I want to go to Paris for 6 nights, budget €600, from Kyiv`.
+The planner returns three compact, comparable cards (flight/train/bus + hotel, total estimate,
+dates and times, cancellation conditions and tappable HTTPS sources). Live cards are labelled
+`Search-grounded` only when Vertex AI returns Google Search grounding evidence. If Search or
+quota is unavailable, the same shape is returned as an explicit `estimate` and is never shown
+as current inventory. Choosing **Save this plan** persists a `PLANNED` trip; it does not book,
+charge or start disruption recovery. A later **Forward booking** intake is the separate handoff
+that creates the confirmed itinerary and its watchpoints.
 
 The live Telegram bot endpoint is wired through the public Cloud Run edge to the private worker;
 the hardened Cloud Function adapter remains available only as a rollback path.

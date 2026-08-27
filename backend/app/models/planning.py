@@ -113,6 +113,80 @@ class TravelPlanContext(BaseModel):
         return [" ".join(item.split()).strip()[:50] for item in value if item.strip()][:8]
 
 
+class TravelPlanTransport(BaseModel):
+    """One concrete transport candidate returned by the planning provider.
+
+    These are offers to investigate, never reservations. Keeping the candidate
+    structured prevents a language model from hiding a generic route behind a
+    polished paragraph and makes the Telegram result useful at a glance.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["FLIGHT", "TRAIN", "BUS"]
+    provider: str = Field(min_length=1, max_length=80)
+    service: str = Field(min_length=1, max_length=80)
+    origin: str = Field(min_length=2, max_length=80)
+    destination: str = Field(min_length=2, max_length=80)
+    departure_at: datetime
+    arrival_at: datetime
+    price_eur: int = Field(ge=0, le=100_000)
+    booking_url: str = Field(min_length=12, max_length=500)
+    conditions: str = Field(min_length=1, max_length=180)
+
+    @field_validator("departure_at", "arrival_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("transport times must include a timezone")
+        return value
+
+    @field_validator("booking_url")
+    @classmethod
+    def validate_booking_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.startswith("https://"):
+            raise ValueError("booking URL must use HTTPS")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_times(self) -> TravelPlanTransport:
+        if self.arrival_at <= self.departure_at:
+            raise ValueError("transport arrival must be after departure")
+        return self
+
+
+class TravelPlanStay(BaseModel):
+    """One concrete accommodation candidate for a planning estimate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=160)
+    check_in: date
+    check_out: date
+    nights: int = Field(ge=1, le=60)
+    price_eur: int = Field(ge=0, le=100_000)
+    cancellation: str = Field(min_length=1, max_length=180)
+    booking_url: str = Field(min_length=12, max_length=500)
+
+    @field_validator("booking_url")
+    @classmethod
+    def validate_booking_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized.startswith("https://"):
+            raise ValueError("booking URL must use HTTPS")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_stay(self) -> TravelPlanStay:
+        if self.check_out <= self.check_in:
+            raise ValueError("check-out must be after check-in")
+        if (self.check_out - self.check_in).days != self.nights:
+            raise ValueError("stay nights must match check-in and check-out")
+        return self
+
+
 class TravelPlanOption(BaseModel):
     """A sourced, non-booking plan option shown before a traveler commits."""
 
@@ -129,6 +203,10 @@ class TravelPlanOption(BaseModel):
     source_links: list[str] = Field(default_factory=list, max_length=8)
     generated_at: datetime
     availability: Literal["ESTIMATE", "LIVE"] = "ESTIMATE"
+    # Optional on purpose: old Firestore drafts can still be read. New planner
+    # results always populate both fields before they are shown as concrete.
+    transport: TravelPlanTransport | None = None
+    stay: TravelPlanStay | None = None
 
     @field_validator("source_links")
     @classmethod

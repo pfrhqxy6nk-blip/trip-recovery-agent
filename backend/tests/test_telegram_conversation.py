@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from app.models.domain import Trip
-from app.models.enums import OnboardingStep
+from app.models.enums import OnboardingStep, TripStatus
 from app.models.monitoring import MonitoringCoverage, MonitoringSubscription
 from app.models.telegram import TravelerProfile
 from app.models.watch import TripWatchpoint, WatchpointKind
@@ -116,3 +116,26 @@ async def test_trip_status_exposes_degraded_live_coverage() -> None:
 
     assert "1 checks need attention" in view.text
     assert "monitoring healthy" not in view.text
+
+
+async def test_trip_status_does_not_call_an_unbooked_plan_protected() -> None:
+    repository, service = await active_service()
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    planned = Trip(
+        trip_id="planned-101",
+        owner_user_id="telegram:101",
+        status=TripStatus.PLANNED,
+        origin="Kyiv",
+        destination="Paris",
+        starts_at=now,
+        ends_at=now,
+    )
+    await repository.seed_trip(planned)
+
+    view = await service.handle(
+        telegram_user_id="101", telegram_chat_id="202", text="my trip status"
+    )
+
+    assert "Your saved plans" in view.text
+    assert "Saved plan: Kyiv → Paris · not booked yet" in view.text
+    assert "protected" not in view.text

@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime
 
 import pytest
-from app.models.enums import OnboardingStep
+from app.models.enums import OnboardingStep, TripStatus
 from app.models.planning import FlexibleTravelPlanRequest, TravelPlanRequest
 from app.models.telegram import TravelerProfile
 from app.models.trip_intake import TripDraft
@@ -63,6 +63,10 @@ async def test_plan_is_persistent_and_never_presented_as_a_booking() -> None:
     assert "Plan saved" in saved.text
     persisted = await repository.get_trip_draft("101")
     assert persisted is not None and persisted.planning_saved_at == now
+    assert persisted.planned_trip_id is not None
+    planned_trip = await repository.get_trip(persisted.planned_trip_id)
+    assert planned_trip is not None and planned_trip.status == TripStatus.PLANNED
+    assert all(item.status == "PLANNED" for item in planned_trip.items)
 
 
 @pytest.mark.asyncio
@@ -162,6 +166,13 @@ async def test_fallback_options_are_explicit_estimates_with_queryable_sources() 
 
     assert len(options) == 3
     assert all(option.availability == "ESTIMATE" for option in options)
+    assert all(option.transport is not None and option.stay is not None for option in options)
+    transport = options[0].transport
+    stay = options[0].stay
+    assert transport is not None and stay is not None
+    assert transport.service == "AF 1235"
+    assert transport.price_eur + stay.price_eur == 490
+    assert stay.nights == 6
     assert all(
         "Kyiv" in option.source_links[0] or "Kyiv+to" in option.source_links[0]
         for option in options

@@ -217,6 +217,7 @@ class TripDraft(BaseModel):
     planning_options: list[TravelPlanOption] = Field(default_factory=list, max_length=3)
     selected_plan_id: str | None = Field(default=None, min_length=1, max_length=40)
     planning_saved_at: datetime | None = None
+    planned_trip_id: str | None = Field(default=None, min_length=1, max_length=200)
     version: int = Field(default=0, ge=0)
     created_at: datetime
     updated_at: datetime

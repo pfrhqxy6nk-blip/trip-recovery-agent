@@ -2,6 +2,7 @@ from enum import StrEnum
 
 
 class TripStatus(StrEnum):
+    PLANNED = "PLANNED"
     HEALTHY = "HEALTHY"
     AT_RISK = "AT_RISK"
     RECOVERED = "RECOVERED"
