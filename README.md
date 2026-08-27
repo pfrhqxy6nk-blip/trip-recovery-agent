@@ -53,7 +53,7 @@ callbacks, restart-safe action execution, owned manual-trip intake, focused Goog
 Search-grounded Trip Watch, safe conversational Telegram messages, and a BYOK Gemini
 handoff backed by Secret Manager. The judge deployment additionally exposes a bounded,
 read-only Vertex AI demo path using project credits (20 shared requests/day, 5 requests/user/day,
-256 output tokens/request, one worker instance); it fails truthfully when the daily guardrail or Google
+1,200 output tokens/request, one worker instance); it fails truthfully when the daily guardrail or Google
 billing/quota is exhausted. See [USER_JOURNEY.md](docs/USER_JOURNEY.md). The private
 worker and Scheduler are deployed. The latest local hardening build is validated by the
 submission gate but must be rolled out to Cloud Run before claiming those changes are live.

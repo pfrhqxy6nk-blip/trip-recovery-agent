@@ -308,8 +308,7 @@ class VertexTripPlanner:
                     tools=[types.Tool(google_search=types.GoogleSearch())],
                 ),
             )
-            raw = (response.text or "").strip().removeprefix("```json").removesuffix("```").strip()
-            data = json.loads(raw)
+            data = self._response_array(response.text or "")
             if not isinstance(data, list):
                 raise ValueError("planner response was not a list")
             sources = self._grounding_sources(response)
@@ -351,6 +350,24 @@ class VertexTripPlanner:
         return await self._fallback.generate(
             request=request, now=now, telegram_user_id=telegram_user_id
         )
+
+    @staticmethod
+    def _response_array(raw_response: str) -> list[object]:
+        """Extract the first JSON array without accepting surrounding prose.
+
+        Gemini can wrap otherwise valid JSON in a Markdown fence or a one-line
+        lead-in even when explicitly told not to.  A bounded raw decode keeps
+        that presentation quirk from throwing away grounded results, while an
+        invalid or truncated response still fails closed to estimates.
+        """
+        raw = raw_response.strip()
+        start = raw.find("[")
+        if start < 0:
+            raise ValueError("planner response contained no JSON array")
+        decoded, _ = json.JSONDecoder().raw_decode(raw[start:])
+        if not isinstance(decoded, list):
+            raise ValueError("planner response was not a list")
+        return decoded
 
     @staticmethod
     def _grounding_sources(response: object) -> list[str]:
@@ -413,6 +430,27 @@ class TelegramPlanningService:
             return self._preferences_view(traveler)
         request: PlanningRequest | None = self._parse_request(text)
         draft = await self._get_or_create_draft(traveler, now)
+        # A transport search without the departure city is not a useful offer.
+        # Ask the single missing question instead of inventing a starting point.
+        if request is not None and request.origin is None:
+            context = self._context_from_request(request)
+            assert context is not None
+            saved_context = await self._repository.save_trip_draft(
+                draft=draft.model_copy(
+                    update={
+                        "planning_context": context,
+                        "planning_request": None,
+                        "planning_options": [],
+                        "selected_plan_id": None,
+                        "planning_saved_at": None,
+                        "updated_at": now,
+                    }
+                ),
+                expected_version=draft.version,
+            )
+            if saved_context is None:
+                raise TelegramPlanningError("your planning draft changed; please try again")
+            return self._clarification_view(context)
         if request is None:
             previous_context = draft.planning_context or self._context_from_request(
                 draft.planning_request
@@ -810,9 +848,7 @@ class TelegramPlanningService:
             )
         )
         # A follow-up such as "из Киева, 2026-10-10" must reach the persisted draft.
-        is_follow_up = bool(
-            re.search(r"^(?:из|from)\b", normalized) and re.search(r"\d{4}-\d{2}-\d{2}", normalized)
-        )
+        is_follow_up = bool(re.search(r"^(?:из|from)\b", normalized))
         return (has_trip_verb and has_trip_shape) or is_follow_up
 
     @classmethod
@@ -870,7 +906,7 @@ class TelegramPlanningService:
 
     @staticmethod
     def _request_from_context(context: TravelPlanContext) -> PlanningRequest | None:
-        if context.destination is None or context.budget_eur is None:
+        if context.destination is None or context.origin is None or context.budget_eur is None:
             return None
         if context.start_date is None and context.end_date is None and context.nights is not None:
             return FlexibleTravelPlanRequest(
@@ -921,6 +957,8 @@ class TelegramPlanningService:
         missing: list[str] = []
         if not context.destination:
             missing.append("your destination")
+        if not context.origin:
+            missing.append("the city you will depart from")
         if not context.start_date or not context.end_date:
             if context.nights:
                 # A duration is sufficient for a flexible shortlist; exact dates are optional.
@@ -933,10 +971,7 @@ class TelegramPlanningService:
             question = f"What is {missing[0]}?"
         else:
             question = "Please tell me " + ", ".join(missing) + "."
-        return TelegramView(
-            text=f"I have the start of your trip brief.\n\n{question}",
-            buttons=[TelegramButton(text="Add a booked itinerary", callback_data="trip:menu")],
-        )
+        return TelegramView(text=f"I have the start of your trip brief.\n\n{question}")
 
     @staticmethod
     def _extract_destination(text: str) -> str | None:

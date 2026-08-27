@@ -216,7 +216,7 @@ async def test_selected_plan_stays_attached_until_real_booking_is_saved() -> Non
     await planning.handle_message(
         telegram_user_id="101",
         telegram_chat_id="202",
-        text="/plan Lisbon | 2026-09-08 | 2026-09-12 | 900 | food",
+        text="I want to go to Lisbon for 4 nights, budget €900, from Kyiv, 2026-09-08",
         now=now,
     )
     await planning.handle(

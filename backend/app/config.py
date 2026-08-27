@@ -69,7 +69,10 @@ class Settings(BaseSettings):
     enable_judge_mode: bool = False
     judge_daily_vertex_calls: int = Field(default=20, ge=1, le=200)
     judge_daily_vertex_calls_per_user: int = Field(default=5, ge=1, le=50)
-    judge_max_output_tokens: int = Field(default=256, ge=64, le=512)
+    # A three-option Google Search plan includes a transport and stay for each
+    # option.  256 tokens routinely truncates that JSON and makes a live search
+    # look like an outage, so keep a bounded but usable ceiling.
+    judge_max_output_tokens: int = Field(default=1200, ge=256, le=2048)
 
     @model_validator(mode="after")
     def validate_local_mode(self) -> "Settings":

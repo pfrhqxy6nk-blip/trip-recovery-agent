@@ -197,7 +197,9 @@ async def test_first_user_activation_switches_to_plain_english_chat() -> None:
 
         planning = await client.post(
             "/telegram/webhook",
-            json=message_update(20, "I want to go to Paris for 6 nights, budget €600."),
+                json=message_update(
+                    20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."
+                ),
             headers=headers,
         )
         assert planning.status_code == 200
@@ -325,7 +327,9 @@ async def test_flexible_trip_brief_routes_through_real_webhook() -> None:
 
         response = await client.post(
             "/telegram/webhook",
-            json=message_update(20, "I want to go to Paris for 6 nights, budget €600."),
+            json=message_update(
+                20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."
+            ),
             headers=headers,
         )
     finally:

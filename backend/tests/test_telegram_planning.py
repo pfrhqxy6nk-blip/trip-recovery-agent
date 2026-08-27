@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 from app.models.enums import OnboardingStep, TripStatus
-from app.models.planning import FlexibleTravelPlanRequest, TravelPlanRequest
+from app.models.planning import TravelPlanRequest
 from app.models.telegram import TravelerProfile
 from app.models.trip_intake import TripDraft
 from app.services.memory import InMemoryIncidentRepository
@@ -35,7 +35,7 @@ async def test_plan_is_persistent_and_never_presented_as_a_booking() -> None:
     options = await service.handle_message(
         telegram_user_id="101",
         telegram_chat_id="202",
-        text="/plan Lisbon | 2026-09-08 | 2026-09-12 | 900 | food, museums",
+        text="I want to go to Lisbon for 4 nights, budget €900, from Kyiv, 2026-09-08",
         now=now,
     )
 
@@ -99,19 +99,19 @@ async def test_natural_language_duration_and_budget_generate_flexible_options() 
         now=now,
     )
 
-    assert "flexible dates" in view.text
-    assert "not bookings" in view.text
+    assert "city you will depart from" in view.text
+    assert not view.button_rows
     draft = await repository.get_trip_draft("101")
-    assert draft is not None and isinstance(draft.planning_request, FlexibleTravelPlanRequest)
-    assert draft.planning_request.destination == "Paris"
-    assert draft.planning_request.nights == 6
-    assert draft.planning_request.budget_eur == 600
-    assert draft.planning_context is None
+    assert draft is not None and draft.planning_request is None
+    assert draft.planning_context is not None
+    assert draft.planning_context.destination == "Paris"
+    assert draft.planning_context.nights == 6
+    assert draft.planning_context.budget_eur == 600
 
     # Firestore stores the Pydantic payload and reconstructs it on the next process.
     restored = TripDraft.model_validate(draft.model_dump(mode="python"))
-    assert isinstance(restored.planning_request, FlexibleTravelPlanRequest)
-    assert restored.planning_request.nights == 6
+    assert restored.planning_context is not None
+    assert restored.planning_context.nights == 6
 
 
 @pytest.mark.asyncio
@@ -143,6 +143,15 @@ async def test_follow_up_completes_natural_language_brief_and_generates_options(
     assert draft.planning_request.start_date.isoformat() == "2026-10-10"
     assert draft.planning_request.end_date.isoformat() == "2026-10-16"
     assert len(draft.planning_options) == 3
+
+
+def test_vertex_parser_accepts_a_fenced_or_prefaced_json_array() -> None:
+    from app.services.telegram_planning import VertexTripPlanner
+
+    raw = "Here are the options:\n```json\n[{\"title\": \"A\"}]\n```"
+    parsed = VertexTripPlanner._response_array(raw)
+
+    assert parsed == [{"title": "A"}]
 
 
 @pytest.mark.asyncio
