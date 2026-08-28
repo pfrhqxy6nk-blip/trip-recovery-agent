@@ -341,7 +341,12 @@ class VertexTripPlanner:
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                     ),
                 ),
-                timeout=18,
+                # Search grounding regularly needs more than a plain Gemini
+                # response because it has to resolve and cite live sources.
+                # Eighteen seconds made healthy searches look like outages in
+                # Telegram. Keep the request bounded, but give it enough time
+                # to return all three transport-and-stay options.
+                timeout=45,
             )
             data = self._response_array(response.text or "")
             if not isinstance(data, list):

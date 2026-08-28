@@ -19,12 +19,14 @@ def test_structured_logging_redacts_credentials_identity_and_callback_data() -> 
         exc_info=None,
     )
     record.incident_id = "incident-safe"
+    record.error_class = "TimeoutError"
     record.chat_id = "must-not-be-whitelisted"
 
     payload = json.loads(JsonFormatter().format(record))
     rendered = json.dumps(payload)
 
     assert payload["incident_id"] == "incident-safe"
+    assert payload["error_class"] == "TimeoutError"
     assert "secret-access-token" not in rendered
     assert "secret-value" not in rendered
     assert "opaqueCallbackToken123" not in rendered

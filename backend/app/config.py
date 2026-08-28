@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # A three-option Google Search plan includes a transport and stay for each
     # option.  256 tokens routinely truncates that JSON and makes a live search
     # look like an outage, so keep a bounded but usable ceiling.
-    judge_max_output_tokens: int = Field(default=2048, ge=256, le=2048)
+    judge_max_output_tokens: int = Field(default=4096, ge=256, le=4096)
 
     @model_validator(mode="after")
     def validate_local_mode(self) -> "Settings":
