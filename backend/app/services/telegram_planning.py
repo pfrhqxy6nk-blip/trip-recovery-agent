@@ -411,10 +411,7 @@ class VertexTripPlanner:
                 item["option_id"] = str(item.get("option_id") or f"live-{index}")[:40]
                 item["generated_at"] = now
                 item["availability"] = "LIVE"
-                model_sources = item.get("source_links", [])
-                if not isinstance(model_sources, list):
-                    model_sources = []
-                item["source_links"] = [*model_sources, *sources]
+                self._normalize_live_item(item, sources=sources)
                 option = TravelPlanOption.model_validate(item)
                 # A grounded paragraph without item-level candidates is not a
                 # usable search result. Fail closed to the explicit estimate
@@ -479,6 +476,53 @@ class VertexTripPlanner:
                 if isinstance(uri, str) and uri.startswith("https://") and uri not in links:
                     links.append(uri)
         return links[:6]
+
+    @staticmethod
+    def _normalize_live_item(item: dict[str, object], *, sources: list[str]) -> None:
+        """Canonicalize bounded model variations without inventing travel facts."""
+
+        for field, limit in (
+            ("title", 120),
+            ("summary", 600),
+            ("route", 200),
+            ("resilience_note", 240),
+            ("weather_note", 240),
+        ):
+            value = item.get(field)
+            if isinstance(value, str):
+                item[field] = value.strip()[:limit]
+
+        verified_sources = [
+            source for source in sources if isinstance(source, str) and source.startswith("https://")
+        ][:6]
+        item["source_links"] = verified_sources
+
+        transport = item.get("transport")
+        if isinstance(transport, dict):
+            raw_mode = str(transport.get("mode", "")).strip().upper()
+            if raw_mode in {"AIR", "AIRPLANE", "PLANE", "FLY"} or "FLIGHT" in raw_mode:
+                transport["mode"] = "FLIGHT"
+            elif raw_mode in {"RAIL", "RAILWAY"} or "TRAIN" in raw_mode:
+                transport["mode"] = "TRAIN"
+            elif raw_mode in {"COACH", "AUTOBUS"} or "BUS" in raw_mode:
+                transport["mode"] = "BUS"
+            for timestamp_field in ("departure_at", "arrival_at"):
+                timestamp = transport.get(timestamp_field)
+                if not isinstance(timestamp, str):
+                    continue
+                normalized = timestamp.strip()
+                try:
+                    parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if parsed.tzinfo is None:
+                    transport[timestamp_field] = f"{normalized}Z"
+            if verified_sources:
+                transport["booking_url"] = verified_sources[0]
+
+        stay = item.get("stay")
+        if isinstance(stay, dict) and verified_sources:
+            stay["booking_url"] = verified_sources[min(1, len(verified_sources) - 1)]
 
 
 class TelegramPlanningService:

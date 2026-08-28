@@ -234,6 +234,36 @@ def test_vertex_parser_accepts_a_fenced_or_prefaced_json_array() -> None:
     assert parsed == [{"title": "A"}]
 
 
+def test_live_plan_normalizer_bounds_schema_variations_and_uses_verified_urls() -> None:
+    from app.services.telegram_planning import VertexTripPlanner
+
+    item: dict[str, object] = {
+        "resilience_note": "r" * 300,
+        "source_links": ["https://invented.example/offer"],
+        "transport": {
+            "mode": "AIR",
+            "departure_at": "2026-10-10T10:00:00",
+            "arrival_at": "2026-10-10T12:00:00",
+            "booking_url": "https://invented.example/flight",
+        },
+        "stay": {"booking_url": "https://invented.example/hotel"},
+    }
+    sources = ["https://grounded.example/flight", "https://grounded.example/hotel"]
+
+    VertexTripPlanner._normalize_live_item(item, sources=sources)
+
+    assert item["resilience_note"] == "r" * 240
+    assert item["source_links"] == sources
+    transport = item["transport"]
+    stay = item["stay"]
+    assert isinstance(transport, dict) and isinstance(stay, dict)
+    assert transport["mode"] == "FLIGHT"
+    assert transport["departure_at"] == "2026-10-10T10:00:00Z"
+    assert transport["arrival_at"] == "2026-10-10T12:00:00Z"
+    assert transport["booking_url"] == sources[0]
+    assert stay["booking_url"] == sources[1]
+
+
 @pytest.mark.asyncio
 async def test_fallback_options_are_explicit_estimates_with_queryable_sources() -> None:
     planner = DeterministicTripPlanner()
