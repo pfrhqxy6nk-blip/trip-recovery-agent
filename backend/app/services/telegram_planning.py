@@ -296,6 +296,7 @@ class VertexTripPlanner:
                 },
             )
             return await self._fallback.generate(request=request, now=now)
+        failure_stage = "search"
         try:
             from google.genai import types
 
@@ -350,13 +351,16 @@ class VertexTripPlanner:
                 # to return all three transport-and-stay options.
                 timeout=35,
             )
+            failure_stage = "grounding"
             sources = self._grounding_sources(response)
             if not sources:
                 raise ValueError("planner response had no grounded sources")
             grounded_text = response.text or ""
+            failure_stage = "parsing"
             try:
                 data = self._response_array(grounded_text)
             except (json.JSONDecodeError, ValueError):
+                failure_stage = "normalization"
                 # Search-grounded Gemini responses can contain excellent live
                 # candidates and citations but still wrap, truncate or slightly
                 # deform the requested JSON. Preserve the citations from that
@@ -391,6 +395,7 @@ class VertexTripPlanner:
                     timeout=15,
                 )
                 data = self._response_array(repaired.text or "")
+            failure_stage = "validation"
             options: list[TravelPlanOption] = []
             for index, item in enumerate(data[:3], start=1):
                 if not isinstance(item, dict):
@@ -423,6 +428,7 @@ class VertexTripPlanner:
                     "error_code": "VERTEX_PLANNER_FALLBACK",
                     "result_class": "ESTIMATE",
                     "error_class": type(exc).__name__,
+                    "failure_stage": failure_stage,
                 },
             )
         return await self._fallback.generate(
