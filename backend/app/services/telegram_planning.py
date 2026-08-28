@@ -310,12 +310,18 @@ class VertexTripPlanner:
                 )
                 nights = (request.end_date - request.start_date).days
             prompt = (
-                "Act as a careful, practical travel agent. Create exactly three concrete, "
-                "date-aware travel planning estimates, ranked for the traveler, not bookings. "
+                "Act as the live research stage of a careful, practical travel agent. "
+                "MANDATORY: use Google Search before answering. Run searches for current public "
+                "transport schedules/fares, current hotel listings and destination weather. "
+                "Do not answer from memory. Create exactly three concrete, date-aware travel "
+                "planning estimates, ranked for the traveler, not bookings. "
                 "Make each option actionable: explain the trade-off, budget fit, and what to "
                 "verify before paying. "
-                "Use Google Search grounding to find current public flight, train or bus and hotel "
-                "options. Never claim a seat or room is reserved. Return JSON only as an array. "
+                "For flexible dates, choose real concrete travel dates between "
+                f"{(now.astimezone(UTC).date() + timedelta(days=14)).isoformat()} and "
+                f"{(now.astimezone(UTC).date() + timedelta(days=120)).isoformat()} that fit the "
+                "brief, and state those dates in every option. Never claim a seat or room is "
+                "reserved. Cite the public pages you used. Return JSON only as an array. "
                 "Every option MUST include: option_id, title, summary, route, estimated_total_eur, "
                 "travel_time_hours, resilience_note, weather_note, source_links, and nested "
                 "transport and stay objects. transport must contain mode (FLIGHT, TRAIN or BUS), "
