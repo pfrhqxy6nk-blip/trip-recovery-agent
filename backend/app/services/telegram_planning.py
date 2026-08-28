@@ -434,6 +434,12 @@ class VertexTripPlanner:
             # but leave an auditable bounded marker for Cloud Logging. The Telegram
             # view labels these options as ESTIMATE, so a provider outage can never
             # be mistaken for live availability.
+            failure_detail = None
+            if isinstance(exc, ValidationError):
+                failure_detail = ";".join(
+                    f"{'.'.join(str(part) for part in error['loc'])}:{error['type']}"
+                    for error in exc.errors(include_input=False, include_url=False)[:8]
+                )[:400]
             logger.warning(
                 "vertex planning failed; returning deterministic estimate",
                 extra={
@@ -442,6 +448,7 @@ class VertexTripPlanner:
                     "result_class": "ESTIMATE",
                     "error_class": type(exc).__name__,
                     "failure_stage": failure_stage,
+                    "failure_detail": failure_detail,
                 },
             )
         return await self._fallback.generate(

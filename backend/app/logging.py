@@ -47,6 +47,7 @@ class JsonFormatter(logging.Formatter):
             "error_code",
             "error_class",
             "failure_stage",
+            "failure_detail",
             "workflow_transition",
             "result_class",
             "attempt",
