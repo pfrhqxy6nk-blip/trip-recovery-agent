@@ -338,7 +338,6 @@ class VertexTripPlanner:
                         # creative writing task.
                         temperature=0.0,
                         max_output_tokens=self._max_output_tokens,
-                        response_mime_type="application/json",
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                     ),
                 ),
@@ -347,14 +346,45 @@ class VertexTripPlanner:
                 # Eighteen seconds made healthy searches look like outages in
                 # Telegram. Keep the request bounded, but give it enough time
                 # to return all three transport-and-stay options.
-                timeout=45,
+                timeout=35,
             )
-            data = self._response_array(response.text or "")
-            if not isinstance(data, list):
-                raise ValueError("planner response was not a list")
             sources = self._grounding_sources(response)
             if not sources:
                 raise ValueError("planner response had no grounded sources")
+            grounded_text = response.text or ""
+            try:
+                data = self._response_array(grounded_text)
+            except (json.JSONDecodeError, ValueError):
+                # Search-grounded Gemini responses can contain excellent live
+                # candidates and citations but still wrap, truncate or slightly
+                # deform the requested JSON. Preserve the citations from that
+                # first call, then use a short, non-grounded normalization call
+                # whose only authority is formatting the already-found facts.
+                repair_prompt = (
+                    "Convert the travel-search result below into valid JSON only. Return exactly "
+                    "one array with exactly three objects and preserve all facts, prices, dates, "
+                    "providers and URLs from the input. Do not add or research anything. Each "
+                    "object must have option_id, title, summary, route, estimated_total_eur, "
+                    "travel_time_hours, resilience_note, weather_note, source_links, transport "
+                    "and stay. transport needs mode, provider, service, origin, destination, "
+                    "departure_at, arrival_at, price_eur, booking_url and conditions. stay needs "
+                    "provider, name, check_in, check_out, nights, price_eur, cancellation and "
+                    "booking_url. Use ISO-8601 timestamps with timezones and ISO dates.\n\n"
+                    f"GROUNDED RESULT:\n{grounded_text[:24000]}"
+                )
+                repaired = await asyncio.wait_for(
+                    self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=repair_prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            max_output_tokens=self._max_output_tokens,
+                            response_mime_type="application/json",
+                        ),
+                    ),
+                    timeout=15,
+                )
+                data = self._response_array(repaired.text or "")
             options: list[TravelPlanOption] = []
             for index, item in enumerate(data[:3], start=1):
                 if not isinstance(item, dict):
