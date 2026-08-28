@@ -242,6 +242,7 @@ class VertexTripPlanner:
     It returns estimates only; the workflow never treats model output as a booking.
     """
 
+    _SEARCH_MODEL = "gemini-3.5-flash-lite"
     _NORMALIZER_MODEL = "gemini-3.5-flash-lite"
 
     def __init__(
@@ -339,7 +340,13 @@ class VertexTripPlanner:
             )
             response = await asyncio.wait_for(
                 self._client.aio.models.generate_content(
-                    model=self._model,
+                    # Flash-Lite has the same Search-grounding capability but
+                    # materially higher shared throughput. The configured
+                    # primary model remains available to the rest of the agent;
+                    # this latency-sensitive shortlist uses the dedicated
+                    # research model so a Telegram turn does not stall on shared
+                    # Flash capacity.
+                    model=self._SEARCH_MODEL,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         # Grounded generation is more reliable at deterministic
@@ -355,7 +362,7 @@ class VertexTripPlanner:
                 # Eighteen seconds made healthy searches look like outages in
                 # Telegram. Keep the request bounded, but give it enough time
                 # to return all three transport-and-stay options.
-                timeout=35,
+                timeout=30,
             )
             failure_stage = "grounding"
             sources = self._grounding_sources(response)
