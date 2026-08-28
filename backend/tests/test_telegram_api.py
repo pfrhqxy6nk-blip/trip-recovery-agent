@@ -157,6 +157,8 @@ async def test_resumable_onboarding_activates_policy() -> None:
         )
         assert settings.status_code == 200
         assert "€20" in settings.json()["text"]
+        assert "Google Calendar connection: not connected" in settings.json()["text"]
+        assert "Gmail connection: not connected" in settings.json()["text"]
     finally:
         await client.aclose()
 
@@ -197,9 +199,7 @@ async def test_first_user_activation_switches_to_plain_english_chat() -> None:
 
         planning = await client.post(
             "/telegram/webhook",
-                json=message_update(
-                    20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."
-                ),
+            json=message_update(20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."),
             headers=headers,
         )
         assert planning.status_code == 200
@@ -207,9 +207,9 @@ async def test_first_user_activation_switches_to_plain_english_chat() -> None:
         assert "Planning" in planning_payload["text"]
         assert "Paris" in planning_payload["text"]
         assert "Live Google Search is temporarily unavailable" in planning_payload["text"]
-        assert "Air France" in planning_payload["text"]
+        assert "Google Flights" in planning_payload["text"]
         assert "ibis Paris République" in planning_payload["text"]
-        assert "AF 1235" in planning_payload["text"]
+        assert "Flight search" in planning_payload["text"]
         assert len(planning_payload["button_rows"]) == 3
     finally:
         await client.aclose()
@@ -262,6 +262,42 @@ async def test_free_text_routes_to_the_safe_trip_conversation() -> None:
 
     assert response.status_code == 200
     assert "weather warnings" in response.json()["text"]
+
+
+async def test_urgent_airline_alert_does_not_overwrite_the_itinerary_draft() -> None:
+    client = await telegram_client()
+    headers = {"X-Telegram-Bot-Api-Secret-Token": "test-secret-123456"}
+    try:
+        await client.post("/telegram/webhook", json=message_update(1, "/start"), headers=headers)
+        for offset, callback in enumerate(
+            [
+                "onboard:setup",
+                "onboard:calendar_auto",
+                "onboard:service_auto",
+                "onboard:reversible_auto",
+                "onboard:spend_none",
+                "onboard:boundary_continue",
+                "onboard:activate",
+            ],
+            start=2,
+        ):
+            await client.post(
+                "/telegram/webhook", json=callback_update(offset, callback), headers=headers
+            )
+        response = await client.post(
+            "/telegram/webhook",
+            json=message_update(
+                20,
+                "My flight LO351 WAW -> MUC is delayed by 105 minutes; I will miss my connection.",
+            ),
+            headers=headers,
+        )
+    finally:
+        await client.aclose()
+
+    assert response.status_code == 200
+    assert "Don’t make a rushed booking" in response.json()["text"]
+    assert "Save trip" not in response.json()["text"]
 
 
 async def test_forwarded_booking_email_routes_to_multimodal_trip_draft() -> None:
@@ -327,9 +363,7 @@ async def test_flexible_trip_brief_routes_through_real_webhook() -> None:
 
         response = await client.post(
             "/telegram/webhook",
-            json=message_update(
-                20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."
-            ),
+            json=message_update(20, "I want to go to Paris for 6 nights, budget €600, from Kyiv."),
             headers=headers,
         )
     finally:

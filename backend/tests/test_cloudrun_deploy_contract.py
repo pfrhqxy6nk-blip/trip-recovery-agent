@@ -56,8 +56,8 @@ def test_m7_edge_worker_deploy_does_not_regress_to_chat_only_worker() -> None:
     assert 'GMAIL_ENABLED="${ENABLE_GMAIL_CONNECTIONS:-false}"' in source
     assert "ENABLE_CALENDAR_ACTIONS=true requires ENABLE_CALENDAR_CONNECTIONS=true" in source
     assert "ENABLE_GMAIL_DRAFTS=true requires ENABLE_GMAIL_CONNECTIONS=true" in source
-    assert 'ENABLE_CALENDAR_CONNECTIONS=${CALENDAR_ENABLED}' in source
-    assert 'ENABLE_GMAIL_CONNECTIONS=${GMAIL_ENABLED}' in source
+    assert "ENABLE_CALENDAR_CONNECTIONS=${CALENDAR_ENABLED}" in source
+    assert "ENABLE_GMAIL_CONNECTIONS=${GMAIL_ENABLED}" in source
     assert "ENABLE_CALENDAR_CONNECTIONS=true,ENABLE_CALENDAR_ACTIONS=true" not in source
     assert "ENABLE_GMAIL_CONNECTIONS=true,ENABLE_GMAIL_DRAFTS=true" not in source
 

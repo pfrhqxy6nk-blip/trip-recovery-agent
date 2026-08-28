@@ -112,8 +112,8 @@ async def test_manual_draft_flight_hotel_and_save_creates_owned_trip() -> None:
     assert "LO351: WAW → MUC" in flight.text
     assert "Hotel: Hotel Bayerischer Hof" in hotel.text
     assert "Trip protected." in saved.text
-    assert "connect your Gemini key" in saved.text
-    assert saved.inline_keyboard()[0][0].callback_data == "ai:menu"
+    assert "Gemini key" in saved.text
+    assert not saved.inline_keyboard()
     assert await repository.get_trip_draft("101") is None
     assert len(repository.trips) == 1
     trip = next(iter(repository.trips.values()))
@@ -150,7 +150,7 @@ async def test_saved_trip_shows_personal_watch_as_enabled_when_gemini_is_connect
     )
 
     assert "Personal Search Watch is enabled" in saved.text
-    assert all(button.callback_data != "ai:menu" for button in saved.inline_keyboard()[0])
+    assert not saved.inline_keyboard()
 
 
 async def test_natural_language_trip_intake() -> None:

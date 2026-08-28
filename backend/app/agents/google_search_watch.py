@@ -272,6 +272,7 @@ class JudgeGoogleSearchWatch:
             window_started_at=day,
             global_limit=self._daily_limit,
             per_user_limit=self._daily_user_limit,
+            capability="watch",
         )
         if not allowed:
             # Exhausted shared judge credits mean the source was not checked.

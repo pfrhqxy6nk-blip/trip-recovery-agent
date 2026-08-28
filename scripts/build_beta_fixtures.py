@@ -152,8 +152,9 @@ def build_pdf(path: Path) -> None:
     for offset in offsets[1:]:
         pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
     pdf.extend(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-        f"startxref\n{xref}\n%%EOF\n".encode("ascii")
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode(
+            "ascii"
+        )
     )
     path.write_bytes(pdf)
 
@@ -161,9 +162,7 @@ def build_pdf(path: Path) -> None:
 def build_fixtures(output_dir: Path = OUT) -> None:
     """Build the complete deterministic fixture pack into ``output_dir``."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "warsaw-munich-lisbon-booking-email.txt").write_text(
-        EMAIL_TEXT, encoding="utf-8"
-    )
+    (output_dir / "warsaw-munich-lisbon-booking-email.txt").write_text(EMAIL_TEXT, encoding="utf-8")
     build_pdf(output_dir / "warsaw-munich-lisbon-booking.pdf")
     # Keep the fixture byte-for-byte reproducible. ZipFile otherwise embeds
     # the current wall-clock timestamp, which creates a noisy binary diff on

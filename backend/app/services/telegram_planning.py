@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 from datetime import UTC, date, datetime, timedelta
 from html import escape
 from typing import Protocol
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from pydantic import ValidationError
 
@@ -121,6 +122,17 @@ class DeterministicTripPlanner:
                 conditions=conditions,
             )
 
+        destination_key = request.destination.strip().lower()
+        stay_names = (
+            ("ibis Paris République", "Hôtel des Arts Montmartre", "The People Paris Nation")
+            if destination_key == "paris"
+            else (
+                f"ibis {request.destination}",
+                f"{request.destination} Central Hotel",
+                f"The People {request.destination}",
+            )
+        )
+
         # These examples deliberately look like real choices (carrier, service,
         # date, time and price) while every card remains visibly an estimate.
         # They make the offline path useful for a judge without fabricating a
@@ -131,16 +143,18 @@ class DeterministicTripPlanner:
                 "Balanced route",
                 transport(
                     mode="FLIGHT",
-                    provider="Air France",
-                    service="AF 1235",
+                    provider="Google Flights",
+                    service="Flight search",
                     depart=at(10, 20),
                     arrive=at(12, 35),
                     price=190,
                     url=flight_search,
-                    conditions="Standard fare; verify baggage and change rules.",
+                    conditions=(
+                        "Indicative flight estimate; verify live fare, times and baggage rules."
+                    ),
                 ),
                 stay(
-                    "ibis Paris République",
+                    stay_names[0],
                     "Booking.com",
                     300,
                     "Free cancellation shown in search; verify before payment.",
@@ -154,16 +168,18 @@ class DeterministicTripPlanner:
                 "Flexible recovery-first",
                 transport(
                     mode="TRAIN",
-                    provider="Deutsche Bahn",
-                    service="ICE connection",
+                    provider="Rail search",
+                    service="Rail itinerary search",
                     depart=at(7, 10),
                     arrive=at(15, 40),
                     price=165,
                     url=train_search,
-                    conditions="Flexible rail fare; check seat and border requirements.",
+                    conditions=(
+                        "Indicative rail estimate; verify availability and border requirements."
+                    ),
                 ),
                 stay(
-                    "Hôtel des Arts Montmartre",
+                    stay_names[1],
                     "Google Hotels",
                     360,
                     "Refundable rate requested; verify the cancellation deadline.",
@@ -177,16 +193,16 @@ class DeterministicTripPlanner:
                 "Value route",
                 transport(
                     mode="BUS",
-                    provider="FlixBus",
-                    service="N24 overnight",
+                    provider="Coach search",
+                    service="Overnight coach search",
                     depart=at(19, 0),
                     arrive=at(8, 30) + timedelta(days=1),
                     price=85,
                     url=train_search,
-                    conditions="Lowest fare; long journey and limited change flexibility.",
+                    conditions="Indicative coach estimate; verify departure time and change terms.",
                 ),
                 stay(
-                    "The People Paris Nation",
+                    stay_names[2],
                     "Hostelworld",
                     240,
                     "Non-refundable estimate; verify room terms before booking.",
@@ -216,8 +232,7 @@ class DeterministicTripPlanner:
                 transport=candidate,
                 stay=accommodation,
             )
-            for option_id, title, candidate, accommodation, summary, resilience
-            in candidates
+            for option_id, title, candidate, accommodation, summary, resilience in candidates
         ]
 
 
@@ -241,7 +256,17 @@ class VertexTripPlanner:
         from google import genai
 
         self._repository = repository
-        self._client = genai.Client(vertexai=True, project=project, location=location)
+        # Vertex AI Search grounding is exposed on the v1 API surface.  Pin the
+        # API version explicitly so Cloud Run does not inherit an older preview
+        # endpoint from the SDK environment.
+        from google.genai import types
+
+        self._client = genai.Client(
+            vertexai=True,
+            project=project,
+            location=location,
+            http_options=types.HttpOptions(api_version="v1"),
+        )
         self._model = model
         self._daily_limit = daily_limit
         self._daily_user_limit = daily_user_limit or daily_limit
@@ -258,6 +283,7 @@ class VertexTripPlanner:
             window_started_at=day,
             global_limit=self._daily_limit,
             per_user_limit=self._daily_user_limit,
+            capability="planning",
         ):
             logger.warning(
                 "vertex planning shared budget exhausted; returning deterministic estimate",
@@ -281,8 +307,10 @@ class VertexTripPlanner:
                 )
                 nights = (request.end_date - request.start_date).days
             prompt = (
-                "Create exactly three concrete, date-aware travel planning estimates, "
-                "not bookings. "
+                "Act as a careful, practical travel agent. Create exactly three concrete, "
+                "date-aware travel planning estimates, ranked for the traveler, not bookings. "
+                "Make each option actionable: explain the trade-off, budget fit, and what to "
+                "verify before paying. "
                 "Use Google Search grounding to find current public flight, train or bus and hotel "
                 "options. Never claim a seat or room is reserved. Return JSON only as an array. "
                 "Every option MUST include: option_id, title, summary, route, estimated_total_eur, "
@@ -293,20 +321,27 @@ class VertexTripPlanner:
                 "contain provider, name, ISO dates check_in/check_out, nights, price_eur, "
                 "cancellation and HTTPS booking_url. Prices are estimates in EUR. Keep strings "
                 "short, "
-                f"and cite only HTTPS source links. Origin: {request.origin or 'not specified'}; "
+                "Use direct provider or Google Travel result URLs, never invented domains. "
+                f"Cite only HTTPS source links. Origin: {request.origin or 'not specified'}; "
                 f"destination: {request.destination}; travel window: {date_context}; "
                 f"nights: {nights}; "
                 f"budget EUR: {request.budget_eur}; interests: "
                 f"{', '.join(request.interests) or 'general sightseeing'}."
             )
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    max_output_tokens=self._max_output_tokens,
-                    tools=[types.Tool(google_search=types.GoogleSearch())],
+            response = await asyncio.wait_for(
+                self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        # Grounded generation is more reliable at deterministic
+                        # temperature; the planner is an extraction task, not a
+                        # creative writing task.
+                        temperature=0.0,
+                        max_output_tokens=self._max_output_tokens,
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                    ),
                 ),
+                timeout=18,
             )
             data = self._response_array(response.text or "")
             if not isinstance(data, list):
@@ -334,7 +369,7 @@ class VertexTripPlanner:
                 options.append(option)
             if len(options) == 3:
                 return options
-        except Exception:
+        except Exception as exc:
             # Do not expose SDK text (it can contain request URLs or credentials),
             # but leave an auditable bounded marker for Cloud Logging. The Telegram
             # view labels these options as ESTIMATE, so a provider outage can never
@@ -345,6 +380,7 @@ class VertexTripPlanner:
                     "provider": "vertex-planner",
                     "error_code": "VERTEX_PLANNER_FALLBACK",
                     "result_class": "ESTIMATE",
+                    "error_class": type(exc).__name__,
                 },
             )
         return await self._fallback.generate(
@@ -455,7 +491,18 @@ class TelegramPlanningService:
             previous_context = draft.planning_context or self._context_from_request(
                 draft.planning_request
             )
-            context = self._natural_context(text, previous_context)
+            # When the bot asks only for a departure city, users naturally
+            # answer with a bare value ("Kyiv", "Berlin") rather than "from
+            # Kyiv". Treat a short plain-text reply as that missing field while
+            # preserving the rest of the saved brief.
+            if (
+                previous_context is not None
+                and previous_context.origin is None
+                and re.fullmatch(r"[A-Za-zÀ-ÿА-яЁё' -]{2,80}", text.strip())
+            ):
+                context = previous_context.model_copy(update={"origin": text.strip()})
+            else:
+                context = self._natural_context(text, previous_context)
             request = self._request_from_context(context)
             if request is None:
                 saved_context = await self._repository.save_trip_draft(
@@ -519,6 +566,19 @@ class TelegramPlanningService:
             or not draft.selected_plan_id
         ):
             raise TelegramPlanningError("choose a plan option first")
+        # Telegram may deliver the same callback more than once (double tap,
+        # retry, or a delayed update). Once a draft has been saved, return the
+        # existing planned trip instead of creating another record.
+        if draft.planning_saved_at is not None and draft.planned_trip_id:
+            return TelegramView(
+                text=(
+                    "This plan is already saved.\n\n"
+                    f"Your planned trip ({draft.planned_trip_id}) is ready. "
+                    "Forward the actual booking when you have it; then I will "
+                    "replace the estimate with verified itinerary data and activate watchpoints."
+                ),
+                parse_mode="HTML",
+            )
         option = next(
             item for item in draft.planning_options if item.option_id == draft.selected_plan_id
         )
@@ -547,7 +607,8 @@ class TelegramPlanningService:
                 f"as a planned trip ({planned_trip_id}). Forward the actual booking when you "
                 "have it; then I will replace the estimate with verified itinerary data and "
                 "activate watchpoints."
-            )
+            ),
+            parse_mode="HTML",
         )
 
     async def _persist_planned_trip(
@@ -681,36 +742,36 @@ class TelegramPlanningService:
         request = draft.planning_request
         if request is None:
             raise TelegramPlanningError("planning request is missing")
+        trip_meta = (
+            f"flexible dates · {request.nights} nights"
+            if isinstance(request, FlexibleTravelPlanRequest)
+            else f"{request.start_date} → {request.end_date}"
+        )
         text = [
-            f"<b>Planning {request.destination}</b>",
-            (
-                f"flexible dates · {request.nights} nights · budget €{request.budget_eur}"
-                if isinstance(request, FlexibleTravelPlanRequest)
-                else f"{request.start_date} → {request.end_date} · budget €{request.budget_eur}"
-            ),
-            "",
-            "Choose one to save it as a plan. These are estimates, not bookings.",
+            f"<b>Planning {escape(request.destination)}</b> · {trip_meta} · "
+            f"€{request.budget_eur}",
+            "Three routes compared for transport, stay, weather exposure and recovery slack.",
+            "Estimates, not bookings. Choose one to save a plan.",
         ]
         if not any(option.availability == "LIVE" for option in draft.planning_options):
             text.insert(
                 3,
-                (
-                    "Live Google Search is temporarily unavailable. These bounded offline "
-                    "estimates are not current availability; try again later for refreshed sources."
-                ),
+                "Live Google Search is temporarily unavailable (shared capacity). "
+                "These are bounded estimates; open the sources to verify today's price.",
             )
         rows: list[list[TelegramButton]] = []
-        for option in draft.planning_options:
+        for index, option in enumerate(draft.planning_options, start=1):
             source_label = "Search-grounded" if option.availability == "LIVE" else "estimate"
             text.append(
-                f"\n<b>{escape(option.title)}</b> · €{option.estimated_total_eur} · "
-                f"{source_label}"
+                f"\n<b>{index} · {escape(option.title)}</b> · "
+                f"€{option.estimated_total_eur} · {source_label}"
             )
             text.append(TelegramPlanningService._option_details(option))
-            text.append(escape(option.resilience_note))
+            remaining = request.budget_eur - option.estimated_total_eur
+            fit = "within budget" if remaining >= 0 else f"€{abs(remaining)} over budget"
+            text.append(f"{fit} · {escape(option.resilience_note)}")
             if option.source_links:
                 text.append(TelegramPlanningService._source_links_view(option))
-            text.append(escape(option.summary))
             rows.append(
                 [
                     TelegramButton(
@@ -743,24 +804,45 @@ class TelegramPlanningService:
             f"🏨 <b>{escape(stay.name)}</b> · {stay.nights} nights · €{stay.price_eur} · "
             f"{escape(stay.cancellation)}"
         )
-        return f"{transport_line}\n{stay_line}\nTotal €{option.estimated_total_eur} · estimate"
+        return f"{transport_line}\n{stay_line}"
 
     @staticmethod
     def _source_links_view(option: TravelPlanOption) -> str:
         """Keep evidence tappable without dumping long raw URLs into chat."""
         links: list[tuple[str, str]] = []
         if option.transport is not None:
-            links.append(("Transport source", option.transport.booking_url))
+            links.append(
+                (
+                    TelegramPlanningService._source_label(option.transport.booking_url),
+                    option.transport.booking_url,
+                )
+            )
         if option.stay is not None:
-            links.append(("Stay source", option.stay.booking_url))
+            links.append(
+                (
+                    TelegramPlanningService._source_label(option.stay.booking_url),
+                    option.stay.booking_url,
+                )
+            )
         known_urls = {url for _, url in links}
         for source in option.source_links:
             if source not in known_urls:
-                links.append(("Search source", source))
+                links.append((TelegramPlanningService._source_label(source), source))
                 known_urls.add(source)
-        return "Sources: " + " · ".join(
-            f'<a href="{escape(url, quote=True)}">{label}</a>' for label, url in links[:2]
+        return "🔗 Sources: " + " · ".join(
+            f'<a href="{escape(url, quote=True)}">{label}</a>' for label, url in links[:3]
         )
+
+    @staticmethod
+    def _source_label(url: str) -> str:
+        host = urlparse(url).netloc.casefold().removeprefix("www.")
+        labels = {
+            "google.com": "Google Travel",
+            "booking.com": "Booking.com",
+            "airbnb.com": "Airbnb",
+            "hostelworld.com": "Hostelworld",
+        }
+        return labels.get(host, host.split(".")[0].title() or "Source")
 
     @staticmethod
     def _preferences_view(traveler: TravelerProfile) -> TelegramView:
@@ -1008,8 +1090,15 @@ class TelegramPlanningService:
     @staticmethod
     def _extract_origin(text: str) -> str | None:
         match = re.search(
+            # Stop at a real trip boundary.  A traveller naturally writes
+            # "from Warsaw in October for €600"; treating the whole tail as
+            # the city makes every downstream transport option nonsensical.
             r"(?:из|from)\s+(.+?)(?=\s+(?:to|в)\s+|\s+(?:на|for)\s+\d|"
-            r"\s+\d{4}-\d{2}-\d{2}|,|$)",
+            r"\s+(?:in|during|around)\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|"
+            r"apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|"
+            r"\s+for\s+(?:(?:€|eur)\s*)?\d|"
+            r"\s+(?:budget|under|за|до|бюджет)\b|\s+\d{4}-\d{2}-\d{2}|,|[.!?]|$)",
             text,
             re.IGNORECASE,
         )
@@ -1017,7 +1106,7 @@ class TelegramPlanningService:
 
     @staticmethod
     def _extract_nights(text: str) -> int | None:
-        match = re.search(r"\b(\d+)\s*(ноч(?:ей|и|ь)?|nights?)\b", text, re.IGNORECASE)
+        match = re.search(r"\b(\d+)\s*-?\s*(ноч(?:ей|и|ь)?|nights?)\b", text, re.IGNORECASE)
         if match:
             return int(match.group(1))
         days = re.search(r"\b(\d+)\s*(дн(?:я|ей)?|days?)\b", text, re.IGNORECASE)

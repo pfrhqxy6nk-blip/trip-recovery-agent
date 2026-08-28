@@ -102,9 +102,7 @@ class InMemoryIncidentRepository:
                 return []
             owner_user_id = traveler.user_id
             trip_ids = {
-                trip.trip_id
-                for trip in self.trips.values()
-                if trip.owner_user_id == owner_user_id
+                trip.trip_id for trip in self.trips.values() if trip.owner_user_id == owner_user_id
             }
             incident_ids = {
                 incident.incident_id
@@ -117,13 +115,9 @@ class InMemoryIncidentRepository:
                 if action.incident_id in incident_ids
             }
             deleted_watchpoint_ids = {
-                key
-                for key, value in self.watchpoints.items()
-                if value.trip_id in trip_ids
+                key for key, value in self.watchpoints.items() if value.trip_id in trip_ids
             }
-            self.trips = {
-                key: value for key, value in self.trips.items() if key not in trip_ids
-            }
+            self.trips = {key: value for key, value in self.trips.items() if key not in trip_ids}
             self.watchpoints = {
                 key: value
                 for key, value in self.watchpoints.items()
@@ -234,9 +228,7 @@ class InMemoryIncidentRepository:
                 # AI credentials use the separate BYOK secret store.
                 # The resource is returned to the caller before its metadata is removed.
                 resource_name
-                for resource_name in [
-                    getattr(ai_connection, "secret_resource_name", None)
-                ]
+                for resource_name in [getattr(ai_connection, "secret_resource_name", None)]
                 if resource_name
             ]
 

@@ -50,15 +50,25 @@ class TelegramRecoveryService:
         token = result.approval_callback_token
         amount = approval.maximum_authorized
         actions = await self._repository.list_actions(approval.incident_id)
-        verified = [
-            action for action in actions if action.execution_status == ActionStatus.VERIFIED
-        ]
-        pending = [
-            action
-            for action in actions
-            if action.execution_status
-            not in {ActionStatus.VERIFIED, ActionStatus.SKIPPED, ActionStatus.SUPERSEDED}
-        ]
+        # Providers can emit the same logical action more than once while a
+        # workflow retries. Render one line per category so Telegram remains a
+        # calm status update instead of exposing internal retry noise.
+        verified: list[PlannedAction] = []
+        pending: list[PlannedAction] = []
+        seen_verified: set[str] = set()
+        seen_pending: set[str] = set()
+        for action in actions:
+            category = action.category.value
+            if action.execution_status == ActionStatus.VERIFIED:
+                if category not in seen_verified:
+                    verified.append(action)
+                    seen_verified.add(category)
+            elif action.execution_status not in {
+                ActionStatus.SKIPPED,
+                ActionStatus.SUPERSEDED,
+            } and category not in seen_pending:
+                pending.append(action)
+                seen_pending.add(category)
         handled = "\n".join(
             f"✓ {self._action_label(action.category.value)} — verified" for action in verified
         )
@@ -71,8 +81,8 @@ class TelegramRecoveryService:
         return TelegramView(
             text=(
                 "Your Munich connection is no longer feasible.\n\n"
-                f"Already handled:\n{handled or '• No action verified yet'}\n\n"
-                f"Still pending:\n{waiting or '• Nothing pending'}\n\n"
+                f"Handled: {handled or 'nothing yet'}\n"
+                f"Next: {waiting or 'nothing pending'}\n\n"
                 f"Flight recovery: €{amount.minor_units / 100:.2f}\n"
                 "Your automatic spending limit is lower, so I need your approval."
             ),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from html import escape
 
@@ -48,7 +49,29 @@ class TelegramConversationService:
             )
 
         normalized = " ".join(text.casefold().split())
-        if self._matches(normalized, "погод", "weather", "отслеж", "what do you monitor"):
+        if self.looks_like_urgent_trip_issue(normalized):
+            return self._urgent_help_view(normalized)
+        # A planning draft can be waiting for one missing detail (currently the
+        # departure city). Continue that state before interpreting the message as
+        # a generic question; otherwise a reply such as "Kyiv" falls through to
+        # the judge chat and the user never receives the three options.
+        if self._planning is not None:
+            pending_draft = await self._repository.get_trip_draft(telegram_user_id)
+            if (
+                pending_draft is not None
+                and pending_draft.telegram_chat_id == telegram_chat_id
+                and pending_draft.planning_context is not None
+                and pending_draft.planning_context.origin is None
+            ):
+                return await self._planning.handle_message(
+                    telegram_user_id=telegram_user_id,
+                    telegram_chat_id=telegram_chat_id,
+                    text=text,
+                    now=now or datetime.now(UTC),
+                )
+        if self._matches(
+            normalized, "погод", "weather", "отслеж", "what do you monitor", "coverage"
+        ):
             return self._coverage_view()
         if self._matches(
             normalized, "статус", "мои поезд", "my trip", "trip status", "что с поезд"
@@ -121,12 +144,10 @@ class TelegramConversationService:
                 text=text,
                 now=now or datetime.now(UTC),
                 telegram_user_id=telegram_user_id,
+                trip_context=await self._gemini_trip_context(traveler.user_id),
             )
             if answer:
-                return TelegramView(
-                    text=f"<b>Trip Watch · sourced answer</b>\n\n{escape(answer)}",
-                    parse_mode="HTML",
-                )
+                return TelegramView(text=escape(answer), parse_mode="HTML")
         return TelegramView(
             text=(
                 "I’m your trip recovery agent. You can write naturally — for example: “what "
@@ -174,9 +195,7 @@ class TelegramConversationService:
         for trip in trips[:5]:
             if trip.status == TripStatus.PLANNED:
                 planned_count += 1
-                lines.append(
-                    f"• Saved plan: {trip.origin} → {trip.destination} · not booked yet"
-                )
+                lines.append(f"• Saved plan: {trip.origin} → {trip.destination} · not booked yet")
                 continue
             watchpoints = await self._repository.list_watchpoints(trip.trip_id)
             subscriptions = await self._repository.list_monitoring_subscriptions(trip.trip_id)
@@ -197,19 +216,139 @@ class TelegramConversationService:
             heading = "Your saved plans"
         return TelegramView(text=heading + "\n" + "\n".join(lines) + suffix)
 
+    async def _gemini_trip_context(self, owner_user_id: str) -> str:
+        """Give Gemini only the compact owned context it needs to sound helpful.
+
+        The model never receives source documents, PNRs, contact data, or a policy
+        token.  Its job is explanation and routing; deterministic workflows retain
+        all authority to change an itinerary.
+        """
+
+        trips = await self._repository.list_trips_for_owner(owner_user_id)
+        if not trips:
+            return "No saved or protected trip."
+        lines: list[str] = []
+        for trip in trips[:3]:
+            if trip.status == TripStatus.PLANNED:
+                lines.append(
+                    f"Saved estimate only: {trip.origin} to {trip.destination}; not booked."
+                )
+                continue
+            watchpoints = await self._repository.list_watchpoints(trip.trip_id)
+            degraded = sum(point.last_error_at is not None for point in watchpoints)
+            coverage = "monitoring healthy" if not degraded else f"{degraded} checks need attention"
+            lines.append(
+                f"Protected: {trip.origin} to {trip.destination}; "
+                f"{len(trip.items)} itinerary items; {len(watchpoints)} watchpoints; {coverage}."
+            )
+        return "\n".join(lines)
+
     @staticmethod
     def _coverage_view() -> TelegramView:
         return TelegramView(
             text=(
-                "For each saved trip, I create focused watchpoints for:\n"
+                "I watch the few things that can break a trip:\n"
                 "• flight status and airline notices\n"
                 "• airport disruption, strikes and closures\n"
                 "• route-relevant weather warnings\n"
                 "• hotel check-in/closure notices\n"
                 "• transfers, road closures and strikes\n"
                 "• activities with changed hours or cancellation\n\n"
-                "I preserve the source link. Public news is an alert to verify; only a "
-                "validated, trip-specific fact can start recovery."
+                "I keep the source for every signal. A headline never changes your plan on "
+                "its own: I first verify that it affects your exact itinerary."
+            )
+        )
+
+    @staticmethod
+    def looks_like_urgent_trip_issue(text: str) -> bool:
+        """Recognise a traveler asking for help mid-trip before ticket intake.
+
+        A forwarded airline alert often includes a flight number and an IATA route,
+        so it can otherwise look like a new itinerary.  In an urgent moment the
+        useful first response is to collect the change, not to silently overwrite
+        the protected trip.
+        """
+
+        normalized = " ".join(text.casefold().split())
+        if (
+            ("flight" in normalized and any(word in normalized for word in ("delay", "cancel")))
+            or ("рейс" in normalized and any(word in normalized for word in ("задерж", "отмен")))
+            or (
+                "connection" in normalized
+                and any(word in normalized for word in ("miss", "infeasible", "not make"))
+            )
+            or (
+                "пересад" in normalized
+                and any(word in normalized for word in ("опоздал", "не успева", "сорвал"))
+            )
+        ):
+            return True
+        if re.search(
+            r"\b(?:connection|transfer)\b.*\b\d{1,2}\s*(?:min|minutes)\b",
+            normalized,
+        ):
+            return True
+        return any(
+            phrase in normalized
+            for phrase in (
+                "flight delayed",
+                "flight cancelled",
+                "flight canceled",
+                "missed my connection",
+                "missed connection",
+                "my connection is",
+                "gate changed",
+                "gate change",
+                "transfer hasn't",
+                "transfer has not",
+                "hotel won't",
+                "hotel will not",
+                "lost my bag",
+                "lost baggage",
+                "my bag is",
+                "рейс задерж",
+                "рейс отмен",
+                "опоздал на пересад",
+                "не успеваю на пересад",
+                "гейт измен",
+                "трансфер не",
+                "отель не",
+                "багаж не",
+                "потерял багаж",
+            )
+        )
+
+    @staticmethod
+    def _urgent_help_view(normalized: str) -> TelegramView:
+        if re.search(r"\b(?:connection|transfer)\b.*\b\d{1,2}\s*(?:min|minutes)\b", normalized):
+            focus = (
+                "Head toward your departure gate now and stay airside. If the gate or terminal "
+                "has changed, ask the airline desk while you move — do not make a rushed "
+                "new booking. "
+                "Send your boarding pass and delay notice so I can compare the revised timing, "
+                "baggage risk and next safe option."
+            )
+        elif any(word in normalized for word in ("bag", "багаж")):
+            focus = (
+                "Keep your baggage receipt and send a photo of the airline or airport notice. "
+                "I will assess the connection risk and keep the baggage issue linked to your trip."
+            )
+        elif any(word in normalized for word in ("hotel", "отель", "transfer", "трансфер")):
+            focus = (
+                "Send the provider message or a screenshot with the new time. I will check the "
+                "downstream impact and prepare the safest next step."
+            )
+        else:
+            focus = (
+                "Send the airline or airport message, boarding pass, or a screenshot. If you know "
+                "the new time, include it too."
+            )
+        return TelegramView(
+            text=(
+                "I’m with you. Don’t make a rushed booking yet.\n\n"
+                f"{focus}\n\n"
+                "I will verify the change against the protected itinerary and only ask you when "
+                "money or a real choice is involved. Keep receipts for any essential expense."
             )
         )
 

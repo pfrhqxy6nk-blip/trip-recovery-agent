@@ -348,9 +348,7 @@ class TelegramTripService:
             planned = await self._repository.get_trip(draft.planned_trip_id)
             if planned is not None and planned.owner_user_id == owner_user_id:
                 await self._repository.seed_trip(
-                    planned.model_copy(
-                        update={"status": TripStatus.CLOSED, "updated_at": now}
-                    )
+                    planned.model_copy(update={"status": TripStatus.CLOSED, "updated_at": now})
                 )
         first_flight_id = next(
             (item.item_id for item in trip.items if item.type.value == "FLIGHT"), None
@@ -407,33 +405,46 @@ class TelegramTripService:
             raise TelegramTripError(
                 "your itinerary changed in another message; review it before saving"
             )
-        coverage = "\n".join(
-            f"• {self._monitoring.coverage_label(subscription)}" for subscription in subscriptions
+        watch_kind_labels = {
+            "FLIGHT_STATUS": "flight status",
+            "AIRPORT_DISRUPTION": "airport disruptions",
+            "WEATHER_IMPACT": "route weather",
+            "HOTEL_STATUS": "hotel notices",
+            "GROUND_TRANSFER": "transfers",
+            "ACTIVITY_STATUS": "activities",
+        }
+        watch_types = ", ".join(
+            dict.fromkeys(
+                watch_kind_labels.get(watchpoint.kind.value, "trip changes")
+                for watchpoint in watchpoints
+            )
         )
         connection = await self._repository.get_ai_connection(telegram_user_id)
         connected = connection is not None and connection.status == AiConnectionStatus.CONNECTED
-        shared_judge_watch = self._judge_mode
+        can_search = self._judge_mode or connected
         watch_status = (
-            "Shared judge Search Watch is enabled with a bounded project quota. I will begin "
-            "with a focused public-source check and message you only when a decision is needed."
-            if shared_judge_watch
-            else "Personal Search Watch is enabled. I will begin with a focused public-source "
-            "check now and message you only when a decision is needed."
+            "Personal Search Watch is enabled. I will check public travel signals as well as "
+            "your itinerary, then write first "
+            "only when a change affects your plan or needs your decision."
             if connected
-            else "The itinerary is ready for autonomous impact analysis. To begin personal "
-            "Search Watch, connect your Gemini key; no booking or payment is performed "
-            "without your policy and approval."
+            else "Trip Watch is enabled for this protected itinerary. I will check public "
+            "travel signals as well as your itinerary, then write first only when a change "
+            "affects your plan or needs your decision."
+            if can_search
+            else "Your itinerary is ready for impact analysis. Connect Gemini in /settings "
+            "with your Gemini key to add public-source monitoring; I never book or spend "
+            "without your approval."
         )
-        buttons = [TelegramButton(text="Add another trip", callback_data="trip:manual:start")]
-        if not connected and not shared_judge_watch:
-            buttons.insert(0, TelegramButton(text="Connect Gemini", callback_data="ai:menu"))
         return TelegramView(
             text=(
-                f"Trip protected. I saved {result.item_count} itinerary item(s).\n\n"
-                f"Monitoring coverage\n{coverage}\n\n"
-                f"I created {len(watchpoints)} focused checks. {watch_status}"
+                f"<b>Trip protected.</b>\n\n"
+                f"I saved {result.item_count} itinerary item(s) and set {len(watchpoints)} "
+                f"focused checks for {watch_types}.\n\n"
+                f"{watch_status}\n\n"
+                "You do not need to manage a dashboard — just keep chatting when something "
+                "changes."
             ),
-            button_rows=[buttons],
+            parse_mode="HTML",
         )
 
     async def _cancel_draft(self, telegram_user_id: str, telegram_chat_id: str) -> TelegramView:
@@ -533,8 +544,7 @@ class TelegramTripService:
             lines.append(f"• Hotel: {draft.hotel.name}")
             if draft.hotel.contact_email:
                 lines.append(
-                    "• Hotel contact for a future Gmail draft: "
-                    f"{draft.hotel.contact_email}"
+                    f"• Hotel contact for a future Gmail draft: {draft.hotel.contact_email}"
                 )
         if draft.source_files:
             lines.append(

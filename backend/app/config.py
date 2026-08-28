@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # A three-option Google Search plan includes a transport and stay for each
     # option.  256 tokens routinely truncates that JSON and makes a live search
     # look like an outage, so keep a bounded but usable ceiling.
-    judge_max_output_tokens: int = Field(default=1200, ge=256, le=2048)
+    judge_max_output_tokens: int = Field(default=2048, ge=256, le=2048)
 
     @model_validator(mode="after")
     def validate_local_mode(self) -> "Settings":
@@ -83,9 +83,7 @@ class Settings(BaseSettings):
         # Google Pub/Sub deployment must select one least-privilege role so a
         # misconfigured Cloud Run revision cannot accidentally expose worker
         # endpoints without the IAM boundary.
-        if self.app_role == "all" and (
-            self.pubsub_transport != "local" or os.getenv("K_SERVICE")
-        ):
+        if self.app_role == "all" and (self.pubsub_transport != "local" or os.getenv("K_SERVICE")):
             raise ValueError("APP_ROLE=all is local-only; use APP_ROLE=worker or APP_ROLE=edge")
         if self.telegram_bot_token and (
             len(self.telegram_webhook_secret.encode("utf-8")) < 16
@@ -127,9 +125,12 @@ class Settings(BaseSettings):
         if self.enable_calendar_connections:
             if not self.calendar_client_id:
                 raise ValueError("ENABLE_CALENDAR_CONNECTIONS requires CALENDAR_CLIENT_ID")
-            if not self.calendar_client_secret_resource_name.startswith(
-                f"projects/{self.google_cloud_project}/secrets/"
-            ) or "/versions/" not in self.calendar_client_secret_resource_name:
+            if (
+                not self.calendar_client_secret_resource_name.startswith(
+                    f"projects/{self.google_cloud_project}/secrets/"
+                )
+                or "/versions/" not in self.calendar_client_secret_resource_name
+            ):
                 raise ValueError(
                     "ENABLE_CALENDAR_CONNECTIONS requires a versioned Calendar client "
                     "secret resource"
@@ -145,9 +146,12 @@ class Settings(BaseSettings):
         if self.enable_gmail_connections:
             if not self.gmail_client_id:
                 raise ValueError("ENABLE_GMAIL_CONNECTIONS requires GMAIL_CLIENT_ID")
-            if not self.gmail_client_secret_resource_name.startswith(
-                f"projects/{self.google_cloud_project}/secrets/"
-            ) or "/versions/" not in self.gmail_client_secret_resource_name:
+            if (
+                not self.gmail_client_secret_resource_name.startswith(
+                    f"projects/{self.google_cloud_project}/secrets/"
+                )
+                or "/versions/" not in self.gmail_client_secret_resource_name
+            ):
                 raise ValueError(
                     "ENABLE_GMAIL_CONNECTIONS requires a versioned Gmail client secret resource"
                 )

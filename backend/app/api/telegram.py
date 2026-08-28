@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import logging
 from datetime import datetime
 from typing import cast
 
@@ -32,6 +33,7 @@ from app.services.telegram_recovery import RecoveryInteractionError, TelegramRec
 from app.services.telegram_trips import TelegramTripError, TelegramTripService
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
+logger = logging.getLogger(__name__)
 MAX_TELEGRAM_UPDATE_BYTES = 64 * 1024
 MAX_TELEGRAM_MEDIA_BYTES = 12 * 1024 * 1024
 TELEGRAM_UPDATES_PER_MINUTE = 30
@@ -209,9 +211,7 @@ def _conversation_service(request: Request) -> TelegramConversationService:
 async def _delete_traveler_data(request: Request, telegram_user_id: str) -> TelegramView:
     """Delete the caller's persisted records and revoke any stored credentials."""
 
-    resources = await request.app.state.container.repository.delete_traveler_data(
-        telegram_user_id
-    )
+    resources = await request.app.state.container.repository.delete_traveler_data(telegram_user_id)
     stores: list[SecretStore] = []
     for store in (
         request.app.state.container.secret_store,
@@ -397,6 +397,29 @@ async def telegram_webhook(
                 telegram_user_id=str(update.message.from_user.user_id),
                 telegram_chat_id=str(update.message.chat.id),
             )
+            telegram_user_id = str(update.message.from_user.user_id)
+            repository = request.app.state.container.repository
+            calendar_connection = await repository.get_calendar_connection(telegram_user_id)
+            gmail_connection = await repository.get_gmail_connection(telegram_user_id)
+            calendar_status = (
+                calendar_connection.status.value.lower()
+                if calendar_connection is not None
+                else "not connected"
+            )
+            gmail_status = (
+                gmail_connection.status.value.lower()
+                if gmail_connection is not None
+                else "not connected"
+            )
+            view = view.model_copy(
+                update={
+                    "text": (
+                        f"{view.text}\n"
+                        f"Google Calendar connection: {calendar_status}\n"
+                        f"Gmail connection: {gmail_status}"
+                    )
+                }
+            )
             view = _settings_view(
                 view,
                 calendar_available=request.app.state.container.telegram_calendar is not None,
@@ -414,6 +437,19 @@ async def telegram_webhook(
                 telegram_user_id=str(update.message.from_user.user_id),
                 telegram_chat_id=str(update.message.chat.id),
                 callback_data="trip:menu",
+                now=now,
+            )
+        elif (
+            update.message is not None
+            and TelegramConversationService.looks_like_urgent_trip_issue(update.message.text)
+        ):
+            # An airline alert can contain both a flight number and an airport
+            # route. Treat it as an urgent change first, not as a replacement
+            # itinerary that could overwrite a traveler's existing draft.
+            view = await _conversation_service(request).handle(
+                telegram_user_id=str(update.message.from_user.user_id),
+                telegram_chat_id=str(update.message.chat.id),
+                text=update.message.text,
                 now=now,
             )
         elif update.message is not None and TelegramTripService.looks_like_itinerary(
@@ -577,23 +613,45 @@ async def telegram_webhook(
         # returning a small recoverable view is therefore safer for the
         # conversation than surfacing a bare 400 (which looks like a blank bot
         # and causes the same update to be delivered repeatedly). Callback
-        # failures remain fail-closed so an invalid or cross-user action never
-        # gets acknowledged as a successful state transition.
-        if update_kind == "message":
-            view = TelegramView(
-                text=(
-                    "I couldn't complete that yet.\n\n"
-                    f"{str(exc)}\n\n"
-                    "Send the document or message again, or use /start to restart setup."
-                )
-            )
-        else:
+        # failures are also rendered as a recoverable view: no state mutation
+        # occurs before this branch, and the user gets the exact safe next step.
+        if update_kind != "message" and (
+            not isinstance(exc, TelegramDemoError)
+            or str(exc) == "start the bot before opening the demo"
+        ):
+            # Keep forged, stale or cross-user callbacks fail-closed at HTTP
+            # level; Telegram must not treat them as a valid interaction.
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        view = TelegramView(
+            text=(
+                "I couldn't complete that yet.\n\n"
+                f"{str(exc)}\n\n"
+                "Send the document or message again, or use /start to restart setup."
+            )
+        )
     except TelegramGatewayError as exc:
         status_code = 413 if exc.status_code == 413 else 502
         raise HTTPException(
             status_code=status_code, detail="Telegram media transfer failed"
         ) from exc
-    await dispatch_pending_workflow_commands(request)
+    except Exception as exc:
+        # Telegram retries non-2xx callback responses, which can turn one
+        # transient backend failure into a blank or duplicated conversation.
+        # Keep the user moving while logging the full exception for operators.
+        logger.exception("Unhandled Telegram update failure")
+        view = TelegramView(
+            text=(
+                "I hit a temporary problem while processing that action.\n\n"
+                "Please try the same action once more. Your existing trip data is safe.\n"
+                f"Reference: {type(exc).__name__}."
+            )
+        )
+    try:
+        await dispatch_pending_workflow_commands(request)
+    except Exception:
+        # Delivery of a queued workflow command is best-effort here; the
+        # Telegram view has already been computed and must not become a blank
+        # webhook response if the outbox publisher is temporarily unavailable.
+        logger.exception("Pending workflow dispatch failed after Telegram view")
     await _deliver_view(update=update, view=view, gateway=gateway)
     return view

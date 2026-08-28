@@ -114,7 +114,17 @@ class ItineraryExtractor:
             ),
         )
 
-        return self._parse_gemini_response(response, "itinerary media")
+        parsed = self._parse_gemini_response(response, "itinerary media")
+        # Vision can occasionally omit a low-salience hotel row while correctly
+        # extracting the flights.  PDFs often include a trustworthy text layer;
+        # use it only to fill missing fields, never to overwrite Gemini's values.
+        if resolved_mime == "application/pdf" and parsed.hotel is None:
+            text_layer = self._media_text(media_bytes, resolved_mime)
+            if text_layer:
+                deterministic = self._extract_deterministic(text_layer, now)
+                if deterministic.hotel is not None:
+                    parsed = parsed.model_copy(update={"hotel": deterministic.hotel})
+        return parsed
 
     async def _extract_with_gemini(self, text: str, now: datetime) -> TripImportRequest:
         if not self.model_id:
@@ -290,13 +300,15 @@ class ItineraryExtractor:
                 index += 1
                 if escaped:
                     if byte in b"nrtbf":
-                        raw.extend({
-                            ord("n"): b"\n",
-                            ord("r"): b"\r",
-                            ord("t"): b"\t",
-                            ord("b"): b"\b",
-                            ord("f"): b"\f",
-                        }[byte])
+                        raw.extend(
+                            {
+                                ord("n"): b"\n",
+                                ord("r"): b"\r",
+                                ord("t"): b"\t",
+                                ord("b"): b"\b",
+                                ord("f"): b"\f",
+                            }[byte]
+                        )
                     elif 48 <= byte <= 55:
                         octal = bytearray([byte])
                         for _ in range(2):
@@ -496,6 +508,26 @@ class ItineraryExtractor:
             )
 
         # Check for hotel mention
+        # Prefer the source's dedicated hotel line.  PDF text layers often flatten
+        # adjacent rows into one string; the broad fallback below must not swallow
+        # the following transfer/check-in fields into the hotel name.
+        hotel_line_match = next(
+            (
+                re.match(
+                    r"(?:hotel|отель|stay|lodging|booking\.com|airbnb)"
+                    r"(?:\s+(?:reservation|confirmation))?[:\s]+(.+?)\s*$",
+                    line,
+                    flags=re.IGNORECASE,
+                )
+                for line in lines
+                if re.match(
+                    r"(?:hotel|отель|stay|lodging|booking\.com|airbnb)\b",
+                    line,
+                    flags=re.IGNORECASE,
+                )
+            ),
+            None,
+        )
         hotel_match = re.search(
             r"(?:hotel|отель|stay|lodging|booking\.com|airbnb)"
             r"(?:\s+(?:reservation|confirmation))?[:\s]+([A-Za-z0-9 .,'-]{3,80})",
@@ -503,7 +535,20 @@ class ItineraryExtractor:
             flags=re.IGNORECASE,
         )
         if hotel_match or hotel_signal:
-            hotel_name = hotel_match.group(1).strip() if hotel_match else "Trip accommodation"
+            hotel_name = (
+                hotel_line_match.group(1).strip()
+                if hotel_line_match is not None
+                else hotel_match.group(1).strip()
+                if hotel_match
+                else "Trip accommodation"
+            )
+            hotel_name = re.split(
+                r"\s+(?:check[- ]?in|check[- ]?out|transfer|arrival|departure)\b|"
+                r"\s+\d{4}-\d{2}-\d{2}T",
+                hotel_name,
+                maxsplit=1,
+                flags=re.IGNORECASE,
+            )[0].strip(" ,;:-")
             if flights:
                 check_in = flights[-1].arrival_at + timedelta(hours=1)
                 check_out = check_in + timedelta(days=3)

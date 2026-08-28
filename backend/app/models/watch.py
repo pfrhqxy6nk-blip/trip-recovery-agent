@@ -20,7 +20,9 @@ class SourceTrust(StrEnum):
     PUBLIC_SIGNAL = "PUBLIC_SIGNAL"
 
 
-def _aware(value: datetime) -> datetime:
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("datetime must include a timezone")
     return value.astimezone(UTC)

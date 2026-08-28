@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from app.models.ai_connection import AiConnection, AiConnectionHandoff
@@ -62,6 +62,28 @@ async def _nested_refs(parent: Any, collection_names: tuple[str, ...]) -> list[A
     return refs
 
 
+def _firestore_trip_payload(value: Any) -> Any:
+    """Make Pydantic trip data compatible with Firestore's value encoder.
+
+    Firestore supports timestamps (``datetime``) but not Python ``date``
+    instances.  Keep timestamps as timestamps for range queries and encode
+    date-only fields (for example a flight's local scheduled date) as ISO
+    strings that Pydantic restores on read.
+    """
+
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _firestore_trip_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_firestore_trip_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_firestore_trip_payload(item) for item in value)
+    return value
+
+
 class FirestoreIncidentRepository:
     def __init__(self, project_id: str) -> None:
         from google.cloud import firestore_v1
@@ -71,19 +93,21 @@ class FirestoreIncidentRepository:
 
     async def seed_trip(self, trip: Trip) -> None:
         trip_ref = self._client.collection("trips").document(trip.trip_id)
-        header = trip.model_dump(mode="python", exclude={"items", "dependencies"})
+        header = _firestore_trip_payload(
+            trip.model_dump(mode="python", exclude={"items", "dependencies"})
+        )
         batch = self._client.batch()
         batch.set(trip_ref, header, merge=True)
         for item in trip.items:
             batch.set(
                 trip_ref.collection("items").document(item.item_id),
-                item.model_dump(mode="python"),
+                _firestore_trip_payload(item.model_dump(mode="json")),
                 merge=True,
             )
         for dependency in trip.dependencies:
             batch.set(
                 trip_ref.collection("dependencies").document(dependency.dependency_id),
-                dependency.model_dump(mode="python"),
+                _firestore_trip_payload(dependency.model_dump(mode="json")),
                 merge=True,
             )
         await batch.commit()
@@ -189,9 +213,9 @@ class FirestoreIncidentRepository:
                     refs.append(snapshot.reference)
                     if collection_name == "watchpoints":
                         watchpoint_ids.append(snapshot.id)
-            async for snapshot in self._client.collection("incidents").where(
-                "trip_id", "==", trip_id
-            ).stream():
+            async for snapshot in (
+                self._client.collection("incidents").where("trip_id", "==", trip_id).stream()
+            ):
                 incident_ids.append(snapshot.id)
                 refs.append(snapshot.reference)
                 refs.extend(
@@ -205,14 +229,18 @@ class FirestoreIncidentRepository:
                 "outbox",
                 "workflowCommands",
             ):
-                async for snapshot in self._client.collection(collection_name).where(
-                    "incident_id", "==", incident_id
-                ).stream():
+                async for snapshot in (
+                    self._client.collection(collection_name)
+                    .where("incident_id", "==", incident_id)
+                    .stream()
+                ):
                     refs.append(snapshot.reference)
         for watchpoint_id in watchpoint_ids:
-            async for snapshot in self._client.collection("groundedSignals").where(
-                "watchpoint_id", "==", watchpoint_id
-            ).stream():
+            async for snapshot in (
+                self._client.collection("groundedSignals")
+                .where("watchpoint_id", "==", watchpoint_id)
+                .stream()
+            ):
                 refs.append(snapshot.reference)
 
         await _delete_refs(self._client, refs)
@@ -221,7 +249,9 @@ class FirestoreIncidentRepository:
     async def create_trip_once(self, trip: Trip) -> bool:
         trip_ref = self._client.collection("trips").document(trip.trip_id)
         transaction = self._client.transaction()
-        header = trip.model_dump(mode="python", exclude={"items", "dependencies"})
+        header = _firestore_trip_payload(
+            trip.model_dump(mode="python", exclude={"items", "dependencies"})
+        )
 
         @self._firestore.async_transactional
         async def create(transaction: Any) -> bool:
@@ -238,12 +268,12 @@ class FirestoreIncidentRepository:
             for item in trip.items:
                 transaction.create(
                     trip_ref.collection("items").document(item.item_id),
-                    item.model_dump(mode="python"),
+                    _firestore_trip_payload(item.model_dump(mode="json")),
                 )
             for dependency in trip.dependencies:
                 transaction.create(
                     trip_ref.collection("dependencies").document(dependency.dependency_id),
-                    dependency.model_dump(mode="python"),
+                    _firestore_trip_payload(dependency.model_dump(mode="json")),
                 )
             return True
 
@@ -259,7 +289,7 @@ class FirestoreIncidentRepository:
         async def put(transaction: Any) -> bool:
             snapshot = await ref.get(transaction=transaction)
             if not snapshot.exists:
-                transaction.create(ref, subscription.model_dump(mode="python"))
+                transaction.create(ref, subscription.model_dump(mode="json"))
                 return True
             return MonitoringSubscription.model_validate(snapshot.to_dict()) == subscription
 
@@ -297,7 +327,7 @@ class FirestoreIncidentRepository:
             current = MonitoringSubscription.model_validate(snapshot.to_dict())
             if current.last_snapshot_fingerprint != expected_fingerprint:
                 return False
-            transaction.set(ref, subscription.model_dump(mode="python"))
+            transaction.set(ref, subscription.model_dump(mode="json"))
             return True
 
         return await update(transaction)
@@ -310,7 +340,7 @@ class FirestoreIncidentRepository:
         async def put(transaction: Any) -> bool:
             snapshot = await ref.get(transaction=transaction)
             if not snapshot.exists:
-                transaction.create(ref, watchpoint.model_dump(mode="python"))
+                transaction.create(ref, watchpoint.model_dump(mode="json"))
                 return True
             return TripWatchpoint.model_validate(snapshot.to_dict()) == watchpoint
 
@@ -349,7 +379,7 @@ class FirestoreIncidentRepository:
             current = TripWatchpoint.model_validate(snapshot.to_dict())
             if current.due_at != expected_due_at:
                 return False
-            transaction.set(ref, watchpoint.model_dump(mode="python"))
+            transaction.set(ref, watchpoint.model_dump(mode="json"))
             return True
 
         return await reschedule(transaction)
@@ -363,7 +393,7 @@ class FirestoreIncidentRepository:
             snapshot = await ref.get(transaction=transaction)
             if snapshot.exists:
                 return False
-            transaction.create(ref, signal.model_dump(mode="python"))
+            transaction.create(ref, signal.model_dump(mode="json"))
             return True
 
         return await put(transaction)
@@ -415,7 +445,7 @@ class FirestoreIncidentRepository:
                 if expected_version is not None:
                     return None
                 stored = draft.model_copy(update={"version": 1})
-                transaction.create(draft_ref, stored.model_dump(mode="python"))
+                transaction.create(draft_ref, stored.model_dump(mode="json"))
                 return stored
             current = TripDraft.model_validate(snapshot.to_dict())
             if (
@@ -425,7 +455,7 @@ class FirestoreIncidentRepository:
             ):
                 return None
             stored = draft.model_copy(update={"version": current.version + 1})
-            transaction.set(draft_ref, stored.model_dump(mode="python"))
+            transaction.set(draft_ref, stored.model_dump(mode="json"))
             return stored
 
         return await save(transaction)
@@ -487,7 +517,7 @@ class FirestoreIncidentRepository:
                         "payload_hash": payload_hash,
                     },
                 )
-                transaction.create(incident_ref, incident.model_dump(mode="python"))
+                transaction.create(incident_ref, incident.model_dump(mode="json"))
                 transaction.update(
                     trip_ref,
                     {
@@ -535,7 +565,7 @@ class FirestoreIncidentRepository:
                     "attempts": int(record.get("attempts", 1)) + 1,
                 },
             )
-            transaction.set(existing_ref, existing.model_dump(mode="python"))
+            transaction.set(existing_ref, existing.model_dump(mode="json"))
             return ClaimResult(ClaimKind.RESUMED, incident_id)
 
         return await claim(transaction)
@@ -573,7 +603,7 @@ class FirestoreIncidentRepository:
                     "lease_expires_at": None,
                 },
             )
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -604,7 +634,7 @@ class FirestoreIncidentRepository:
             incident.prompt_version = prompt_version
             incident.version += 1
             incident.updated_at = updated_at
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             return incident
 
         return await commit(transaction)
@@ -644,7 +674,7 @@ class FirestoreIncidentRepository:
             incident.lease_expires_at = None
             incident.version += 1
             incident.updated_at = completed_at
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             transaction.update(
                 event_ref,
                 {
@@ -683,7 +713,7 @@ class FirestoreIncidentRepository:
                 incident.analysis_started_at = updated_at
             incident.version += 1
             incident.updated_at = updated_at
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             return incident
 
         return await transition(transaction)
@@ -717,10 +747,10 @@ class FirestoreIncidentRepository:
                 and previous_plan.status == PlanStatus.CURRENT
             ):
                 previous_plan.status = PlanStatus.SUPERSEDED
-                transaction.set(previous_ref, previous_plan.model_dump(mode="python"))
-            transaction.create(plan_ref, plan.model_dump(mode="python"))
+                transaction.set(previous_ref, previous_plan.model_dump(mode="json"))
+            transaction.create(plan_ref, plan.model_dump(mode="json"))
             incident.version += 1
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             return True
 
         return await commit(transaction)
@@ -755,7 +785,7 @@ class FirestoreIncidentRepository:
             existing = await action_ref.get(transaction=transaction)
             if existing.exists:
                 return (existing.to_dict() or {}).get("effect_key") == action.effect_key
-            transaction.create(action_ref, action.model_dump(mode="python"))
+            transaction.create(action_ref, action.model_dump(mode="json"))
             return True
 
         return await put(transaction)
@@ -804,7 +834,7 @@ class FirestoreIncidentRepository:
             action.lease_expires_at = lease_expires_at
             action.retry_after = None
             action.attempt_count += 1
-            transaction.set(action_ref, action.model_dump(mode="python"))
+            transaction.set(action_ref, action.model_dump(mode="json"))
             return action
 
         return await claim(transaction)
@@ -885,11 +915,11 @@ class FirestoreIncidentRepository:
                 action.lease_owner = None
                 action.lease_started_at = None
                 action.lease_expires_at = None
-                transaction.set(action_ref, action.model_dump(mode="python"))
+                transaction.set(action_ref, action.model_dump(mode="json"))
                 if attempt_ref is not None and existing_attempt is not None:
                     if not existing_attempt.exists:
                         assert attempt is not None
-                        transaction.create(attempt_ref, attempt.model_dump(mode="python"))
+                        transaction.create(attempt_ref, attempt.model_dump(mode="json"))
                 return True
             if action.execution_status != ActionStatus.LEASED:
                 return False
@@ -898,7 +928,7 @@ class FirestoreIncidentRepository:
             action.lease_owner = None
             action.lease_started_at = None
             action.lease_expires_at = None
-            transaction.set(action_ref, action.model_dump(mode="python"))
+            transaction.set(action_ref, action.model_dump(mode="json"))
             transaction.create(
                 effect_ref,
                 {
@@ -910,7 +940,7 @@ class FirestoreIncidentRepository:
             if attempt_ref is not None and existing_attempt is not None:
                 if not existing_attempt.exists:
                     assert attempt is not None
-                    transaction.create(attempt_ref, attempt.model_dump(mode="python"))
+                    transaction.create(attempt_ref, attempt.model_dump(mode="json"))
             return True
 
         return await complete(transaction)
@@ -956,8 +986,8 @@ class FirestoreIncidentRepository:
             action.lease_started_at = None
             action.lease_expires_at = None
             action.retry_after = retry_after
-            transaction.set(action_ref, action.model_dump(mode="python"))
-            transaction.create(attempt_ref, attempt.model_dump(mode="python"))
+            transaction.set(action_ref, action.model_dump(mode="json"))
+            transaction.create(attempt_ref, attempt.model_dump(mode="json"))
             return True
 
         return await fail(transaction)
@@ -980,7 +1010,7 @@ class FirestoreIncidentRepository:
             snapshot = await attempt_ref.get(transaction=transaction)
             if snapshot.exists:
                 return ActionAttempt.model_validate(snapshot.to_dict()) == attempt
-            transaction.create(attempt_ref, attempt.model_dump(mode="python"))
+            transaction.create(attempt_ref, attempt.model_dump(mode="json"))
             return True
 
         return await record(transaction)
@@ -1024,7 +1054,7 @@ class FirestoreIncidentRepository:
             action.execution_status = (
                 ActionStatus.VERIFIED if verified else ActionStatus.VERIFICATION_FAILED
             )
-            transaction.set(action_ref, action.model_dump(mode="python"))
+            transaction.set(action_ref, action.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -1045,7 +1075,7 @@ class FirestoreIncidentRepository:
                 return (existing.to_dict() or {}).get(
                     "callback_token_hash"
                 ) == approval.callback_token_hash
-            transaction.create(approval_ref, approval.model_dump(mode="python"))
+            transaction.create(approval_ref, approval.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1151,11 +1181,11 @@ class FirestoreIncidentRepository:
             approval.status = ApprovalStatus.APPROVED
             approval.decided_at = now
             approval.consumed_update_id = update_id
-            transaction.set(approval_ref, approval.model_dump(mode="python"))
+            transaction.set(approval_ref, approval.model_dump(mode="json"))
             transaction.create(
                 update_ref, {"payload_hash": canonical_hash({"approval_id": approval_id})}
             )
-            transaction.create(outbox_ref, outbox.model_dump(mode="python"))
+            transaction.create(outbox_ref, outbox.model_dump(mode="json"))
             return True
 
         return await consume(transaction)
@@ -1220,8 +1250,8 @@ class FirestoreIncidentRepository:
             incident.status = IncidentStatus.CANCELLED
             incident.version += 1
             incident.updated_at = now
-            transaction.set(approval_ref, approval.model_dump(mode="python"))
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(approval_ref, approval.model_dump(mode="json"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             transaction.create(
                 update_ref,
                 {
@@ -1305,13 +1335,13 @@ class FirestoreIncidentRepository:
             incident.status = IncidentStatus.PLANNING
             incident.version += 1
             incident.updated_at = now
-            transaction.set(approval_ref, approval.model_dump(mode="python"))
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
+            transaction.set(approval_ref, approval.model_dump(mode="json"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
             transaction.create(
                 update_ref,
                 {"payload_hash": canonical_hash({"approval_id": approval_id, "status": "replan"})},
             )
-            transaction.create(outbox_ref, outbox.model_dump(mode="python"))
+            transaction.create(outbox_ref, outbox.model_dump(mode="json"))
             return True
 
         return await request_replan(transaction)
@@ -1366,9 +1396,9 @@ class FirestoreIncidentRepository:
             incident.status = IncidentStatus.PLANNING
             incident.version += 1
             incident.updated_at = now
-            transaction.set(approval_ref, approval.model_dump(mode="python"))
-            transaction.set(incident_ref, incident.model_dump(mode="python"))
-            transaction.create(outbox_ref, outbox.model_dump(mode="python"))
+            transaction.set(approval_ref, approval.model_dump(mode="json"))
+            transaction.set(incident_ref, incident.model_dump(mode="json"))
+            transaction.create(outbox_ref, outbox.model_dump(mode="json"))
             return True
 
         return await expire(transaction)
@@ -1436,11 +1466,12 @@ class FirestoreIncidentRepository:
         async def enqueue(transaction: Any) -> bool:
             existing = await outbox_ref.get(transaction=transaction)
             if not existing.exists:
-                transaction.create(outbox_ref, outbox.model_dump(mode="python"))
+                transaction.create(outbox_ref, outbox.model_dump(mode="json"))
                 return True
-            return bool((existing.to_dict() or {}).get("command", {}).get(
-                "command_id"
-            ) == outbox.command.command_id)
+            return bool(
+                (existing.to_dict() or {}).get("command", {}).get("command_id")
+                == outbox.command.command_id
+            )
 
         return await enqueue(transaction)
 
@@ -1477,7 +1508,7 @@ class FirestoreIncidentRepository:
                 return True
             record.status = OutboxStatus.PUBLISHED
             record.published_at = published_at
-            transaction.set(outbox_ref, record.model_dump(mode="python"))
+            transaction.set(outbox_ref, record.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -1516,7 +1547,7 @@ class FirestoreIncidentRepository:
                 lease_owner=worker_id,
                 lease_expires_at=lease_expires_at,
             )
-            transaction.set(command_ref, state.model_dump(mode="python"))
+            transaction.set(command_ref, state.model_dump(mode="json"))
             return True
 
         return await claim(transaction)
@@ -1541,7 +1572,7 @@ class FirestoreIncidentRepository:
             state.lease_owner = None
             state.lease_expires_at = None
             state.completed_at = completed_at
-            transaction.set(command_ref, state.model_dump(mode="python"))
+            transaction.set(command_ref, state.model_dump(mode="json"))
             return True
 
         return await complete(transaction)
@@ -1602,7 +1633,7 @@ class FirestoreIncidentRepository:
         await (
             self._client.collection("telegramUsers")
             .document(traveler.telegram_user_id)
-            .set(traveler.model_dump(mode="python"))
+            .set(traveler.model_dump(mode="json"))
         )
 
     async def activate_traveler_policy(
@@ -1632,8 +1663,8 @@ class FirestoreIncidentRepository:
             expected_previous = policy.version - 1 or None
             if current.active_policy_version != expected_previous:
                 return False
-            transaction.create(policy_ref, policy.model_dump(mode="python"))
-            transaction.set(traveler_ref, traveler.model_dump(mode="python"))
+            transaction.create(policy_ref, policy.model_dump(mode="json"))
+            transaction.set(traveler_ref, traveler.model_dump(mode="json"))
             return True
 
         return await activate(transaction)
@@ -1671,7 +1702,7 @@ class FirestoreIncidentRepository:
                     payload.get("view_hash") == notification.view_hash
                     and payload.get("chat_id") == notification.chat_id
                 )
-            transaction.create(notification_ref, notification.model_dump(mode="python"))
+            transaction.create(notification_ref, notification.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1693,7 +1724,7 @@ class FirestoreIncidentRepository:
             notification.status = "SENT"
             notification.message_id = message_id
             notification.sent_at = sent_at
-            transaction.set(notification_ref, notification.model_dump(mode="python"))
+            transaction.set(notification_ref, notification.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -1714,7 +1745,7 @@ class FirestoreIncidentRepository:
                 return False
             notification.status = "UNKNOWN"
             notification.unknown_at = unknown_at
-            transaction.set(notification_ref, notification.model_dump(mode="python"))
+            transaction.set(notification_ref, notification.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -1736,7 +1767,7 @@ class FirestoreIncidentRepository:
             notification.status = "BLOCKED"
             notification.blocked_at = blocked_at
             notification.failure_code = failure_code
-            transaction.set(notification_ref, notification.model_dump(mode="python"))
+            transaction.set(notification_ref, notification.model_dump(mode="json"))
             return True
 
         return await mark(transaction)
@@ -1749,7 +1780,7 @@ class FirestoreIncidentRepository:
         async def store(transaction: Any) -> bool:
             if (await handoff_ref.get(transaction=transaction)).exists:
                 return False
-            transaction.create(handoff_ref, handoff.model_dump(mode="python"))
+            transaction.create(handoff_ref, handoff.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1779,7 +1810,7 @@ class FirestoreIncidentRepository:
             ):
                 return None
             handoff.consumed_at = now
-            transaction.set(handoff_ref, handoff.model_dump(mode="python"))
+            transaction.set(handoff_ref, handoff.model_dump(mode="json"))
             return handoff
 
         return await consume(transaction)
@@ -1802,7 +1833,7 @@ class FirestoreIncidentRepository:
             .document(connection.telegram_user_id)
             .collection("connections")
             .document("gemini")
-            .set(connection.model_dump(mode="python"))
+            .set(connection.model_dump(mode="json"))
         )
 
     async def store_calendar_oauth_state(self, state: CalendarOAuthState) -> bool:
@@ -1813,7 +1844,7 @@ class FirestoreIncidentRepository:
         async def store(transaction: Any) -> bool:
             if (await state_ref.get(transaction=transaction)).exists:
                 return False
-            transaction.create(state_ref, state.model_dump(mode="python"))
+            transaction.create(state_ref, state.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1853,7 +1884,7 @@ class FirestoreIncidentRepository:
             ):
                 return None
             state.consumed_at = now
-            transaction.set(state_ref, state.model_dump(mode="python"))
+            transaction.set(state_ref, state.model_dump(mode="json"))
             return state
 
         return await consume(transaction)
@@ -1876,7 +1907,7 @@ class FirestoreIncidentRepository:
             .document(connection.telegram_user_id)
             .collection("connections")
             .document("calendar")
-            .set(connection.model_dump(mode="python"))
+            .set(connection.model_dump(mode="json"))
         )
 
     async def store_gmail_oauth_state(self, state: GmailOAuthState) -> bool:
@@ -1887,7 +1918,7 @@ class FirestoreIncidentRepository:
         async def store(transaction: Any) -> bool:
             if (await state_ref.get(transaction=transaction)).exists:
                 return False
-            transaction.create(state_ref, state.model_dump(mode="python"))
+            transaction.create(state_ref, state.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1927,7 +1958,7 @@ class FirestoreIncidentRepository:
             ):
                 return None
             state.consumed_at = now
-            transaction.set(state_ref, state.model_dump(mode="python"))
+            transaction.set(state_ref, state.model_dump(mode="json"))
             return state
 
         return await consume(transaction)
@@ -1950,7 +1981,7 @@ class FirestoreIncidentRepository:
             .document(connection.telegram_user_id)
             .collection("connections")
             .document("gmail")
-            .set(connection.model_dump(mode="python"))
+            .set(connection.model_dump(mode="json"))
         )
 
     async def save_expense_once(self, expense: TripExpense) -> bool:
@@ -1962,7 +1993,7 @@ class FirestoreIncidentRepository:
             snapshot = await expense_ref.get(transaction=transaction)
             if snapshot.exists:
                 return TripExpense.model_validate(snapshot.to_dict()) == expense
-            transaction.create(expense_ref, expense.model_dump(mode="python"))
+            transaction.create(expense_ref, expense.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -1986,7 +2017,7 @@ class FirestoreIncidentRepository:
             snapshot = await document_ref.get(transaction=transaction)
             if snapshot.exists:
                 return TripDocument.model_validate(snapshot.to_dict()) == document
-            transaction.create(document_ref, document.model_dump(mode="python"))
+            transaction.create(document_ref, document.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -2004,7 +2035,7 @@ class FirestoreIncidentRepository:
             snapshot = await item_ref.get(transaction=transaction)
             if snapshot.exists:
                 return OpenFinancialItem.model_validate(snapshot.to_dict()) == item
-            transaction.create(item_ref, item.model_dump(mode="python"))
+            transaction.create(item_ref, item.model_dump(mode="json"))
             return True
 
         return await store(transaction)
@@ -2040,7 +2071,7 @@ class FirestoreIncidentRepository:
             item.actual_amount = actual_amount
             item.settled_at = settled_at
             item.updated_at = settled_at
-            transaction.set(item_ref, item.model_dump(mode="python"))
+            transaction.set(item_ref, item.model_dump(mode="json"))
             return item
 
         return await settle(transaction)

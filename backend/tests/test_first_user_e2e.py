@@ -44,9 +44,9 @@ class PilotTelegramGateway:
 
 async def test_first_pilot_user_onboards_adds_trip_and_recovers_via_telegram() -> None:
     settings = Settings(
-            pubsub_transport="local",
-            app_role="all",
-            process_events_inline=True,
+        pubsub_transport="local",
+        app_role="all",
+        process_events_inline=True,
         telegram_webhook_secret="pilot-webhook-secret",
         enable_pilot_trip=True,
         enable_simulator=True,

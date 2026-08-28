@@ -64,6 +64,15 @@ async def test_plan_is_persistent_and_never_presented_as_a_booking() -> None:
     assert planned_trip is not None and planned_trip.status == TripStatus.PLANNED
     assert all(item.status == "PLANNED" for item in planned_trip.items)
 
+    repeated = await service.handle(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        callback_data="plan:select:balanced",
+        now=now,
+    )
+    assert "already saved" in repeated.text
+    assert repeated.text.count("planned-trip-") == 1
+
 
 @pytest.mark.asyncio
 async def test_recommendations_are_explicitly_opt_in() -> None:
@@ -165,10 +174,61 @@ async def test_natural_language_route_with_from_and_to_keeps_both_cities() -> No
     assert draft.planning_request.destination == "Paris"
 
 
+@pytest.mark.asyncio
+async def test_natural_language_trip_brief_does_not_absorb_month_or_previous_plan() -> None:
+    """The common concierge-style request must be parsed as fresh, usable facts."""
+
+    repository = await active_repository()
+    service = TelegramPlanningService(repository)
+    now = datetime(2026, 8, 23, tzinfo=UTC)
+
+    # Seed an unrelated saved brief: a new message must replace, not blend with it.
+    await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="I want to go to Rome for 4 nights, budget €700, from Warsaw",
+        now=now,
+    )
+    view = await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text=(
+            "Plan a 6-night trip to Paris from Warsaw in October for €600. "
+            "Show three practical choices."
+        ),
+        now=now,
+    )
+
+    draft = await repository.get_trip_draft("101")
+    assert draft is not None and draft.planning_request is not None
+    assert "Planning Paris" in view.text
+    assert draft.planning_request.origin == "Warsaw"
+    assert draft.planning_request.destination == "Paris"
+    assert getattr(draft.planning_request, "nights", None) == 6
+
+
+@pytest.mark.asyncio
+async def test_natural_language_trip_brief_stops_origin_before_budget() -> None:
+    repository = await active_repository()
+    service = TelegramPlanningService(repository)
+    now = datetime(2026, 8, 23, tzinfo=UTC)
+
+    await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="Plan 5 nights in Lisbon from Warsaw for €650. I prefer a direct flight.",
+        now=now,
+    )
+
+    draft = await repository.get_trip_draft("101")
+    assert draft is not None and draft.planning_request is not None
+    assert draft.planning_request.origin == "Warsaw"
+
+
 def test_vertex_parser_accepts_a_fenced_or_prefaced_json_array() -> None:
     from app.services.telegram_planning import VertexTripPlanner
 
-    raw = "Here are the options:\n```json\n[{\"title\": \"A\"}]\n```"
+    raw = 'Here are the options:\n```json\n[{"title": "A"}]\n```'
     parsed = VertexTripPlanner._response_array(raw)
 
     assert parsed == [{"title": "A"}]
@@ -195,7 +255,8 @@ async def test_fallback_options_are_explicit_estimates_with_queryable_sources() 
     transport = options[0].transport
     stay = options[0].stay
     assert transport is not None and stay is not None
-    assert transport.service == "AF 1235"
+    assert transport.service == "Flight search"
+    assert transport.provider == "Google Flights"
     assert transport.price_eur + stay.price_eur == 490
     assert stay.nights == 6
     assert all(

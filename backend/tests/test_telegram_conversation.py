@@ -9,6 +9,15 @@ from app.services.memory import InMemoryIncidentRepository
 from app.services.telegram_conversation import TelegramConversationService
 
 
+class ConciergeProbe:
+    def __init__(self) -> None:
+        self.context = ""
+
+    async def answer(self, **kwargs: object) -> str:
+        self.context = str(kwargs["trip_context"])
+        return "I can compare three sourced options once you tell me the destination and dates."
+
+
 async def active_service() -> tuple[InMemoryIncidentRepository, TelegramConversationService]:
     repository = InMemoryIncidentRepository()
     now = datetime(2026, 8, 17, tzinfo=UTC)
@@ -83,6 +92,77 @@ async def test_free_text_never_executes_a_recovery_action() -> None:
     assert "never execute a booking" in view.text
     assert repository.incidents == {}
     assert repository.actions == {}
+
+
+async def test_urgent_airline_alert_stays_in_calm_recovery_intake() -> None:
+    repository, service = await active_service()
+
+    view = await service.handle(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="My flight LO351 WAW -> MUC is delayed by 105 minutes. I will miss my connection.",
+    )
+
+    assert "Don’t make a rushed booking" in view.text
+    assert "Send the airline or airport message" in view.text
+    assert view.button_rows == []
+    assert repository.trips == {}
+    assert repository.actions == {}
+
+
+async def test_tight_connection_has_a_safe_first_response() -> None:
+    repository, service = await active_service()
+
+    view = await service.handle(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="My connection in Munich is only 35 minutes now — should I run?",
+    )
+
+    assert "Head toward your departure gate now" in view.text
+    assert "boarding pass and delay notice" in view.text
+    assert repository.trips == {}
+
+
+async def test_urgent_baggage_message_asks_for_evidence_without_pretending_to_track_it() -> None:
+    repository, service = await active_service()
+
+    view = await service.handle(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="My bag is missing after the Munich connection",
+    )
+
+    assert "baggage receipt" in view.text
+    assert "assess the connection risk" in view.text
+    assert repository.trips == {}
+
+
+async def test_gemini_concierge_receives_only_compact_owned_trip_context() -> None:
+    repository, _ = await active_service()
+    now = datetime(2026, 8, 20, tzinfo=UTC)
+    await repository.seed_trip(
+        Trip(
+            trip_id="trip-101",
+            owner_user_id="telegram:101",
+            origin="WAW",
+            destination="LIS",
+            starts_at=now,
+            ends_at=now,
+        )
+    )
+    probe = ConciergeProbe()
+    service = TelegramConversationService(repository, judge_chat=probe)  # type: ignore[arg-type]
+
+    view = await service.handle(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="Can you help me choose a quieter hotel?",
+    )
+
+    assert "three sourced options" in view.text
+    assert "Protected: WAW to LIS" in probe.context
+    assert "PNR" not in probe.context
 
 
 async def test_trip_status_exposes_degraded_live_coverage() -> None:
