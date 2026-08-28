@@ -242,6 +242,8 @@ class VertexTripPlanner:
     It returns estimates only; the workflow never treats model output as a booking.
     """
 
+    _NORMALIZER_MODEL = "gemini-3.5-flash-lite"
+
     def __init__(
         self,
         repository: IncidentRepository,
@@ -374,7 +376,11 @@ class VertexTripPlanner:
                 )
                 repaired = await asyncio.wait_for(
                     self._client.aio.models.generate_content(
-                        model=self._model,
+                        # Normalization is a low-latency extraction task. Keep
+                        # the primary Flash model for Search/reasoning and use
+                        # Flash-Lite only to make its already-grounded facts
+                        # conform to the strict application schema.
+                        model=self._NORMALIZER_MODEL,
                         contents=repair_prompt,
                         config=types.GenerateContentConfig(
                             temperature=0.0,
