@@ -338,6 +338,7 @@ class VertexTripPlanner:
                         # creative writing task.
                         temperature=0.0,
                         max_output_tokens=self._max_output_tokens,
+                        response_mime_type="application/json",
                         tools=[types.Tool(google_search=types.GoogleSearch())],
                     ),
                 ),
