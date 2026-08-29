@@ -175,6 +175,33 @@ async def test_natural_language_route_with_from_and_to_keeps_both_cities() -> No
 
 
 @pytest.mark.asyncio
+async def test_concierge_brief_does_not_parse_in_inside_train_as_destination() -> None:
+    """A natural planning request must preserve its city, not a later word ending in ``in``."""
+
+    repository = await active_repository()
+    service = TelegramPlanningService(repository)
+    now = datetime(2026, 8, 23, tzinfo=UTC)
+
+    view = await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text=(
+            "I want Paris for 6 nights from Warsaw, under €600. "
+            "Compare a direct flight with train alternatives and a central refundable hotel."
+        ),
+        now=now,
+    )
+
+    draft = await repository.get_trip_draft("101")
+    assert draft is not None and draft.planning_request is not None
+    assert "Planning Paris" in view.text
+    assert draft.planning_request.origin == "Warsaw"
+    assert draft.planning_request.destination == "Paris"
+    assert getattr(draft.planning_request, "nights", None) == 6
+    assert draft.planning_request.budget_eur == 600
+
+
+@pytest.mark.asyncio
 async def test_natural_language_trip_brief_does_not_absorb_month_or_previous_plan() -> None:
     """The common concierge-style request must be parsed as fresh, usable facts."""
 

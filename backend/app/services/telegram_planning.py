@@ -1167,6 +1167,15 @@ class TelegramPlanningService:
         # Handle the most natural English formulation before the general
         # "to Paris" matcher below. Without this branch, "go from Kyiv to
         # Paris" was captured as the destination "go".
+        concierge_request = re.search(
+            r"\b(?:i\s+)?want\s+(?!to\s+(?:go|travel|fly|visit)\b)(?!(?:go|travel|fly|visit)\b)(?:to\s+)?(.+?)"
+            r"(?=\s+(?:for|на)\s+\d+\s*(?:nights?|ноч(?:ей|и|ь)?)|"
+            r"\s+(?:under|budget|за|до|бюджет)\b|\s+(?:from|из)\b|,|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if concierge_request:
+            return " ".join(concierge_request.group(1).split()).strip(" ,") or None
         direct_route = re.search(
             r"\b(?:go|travel|fly|visit)\s+from\s+.+?\s+(?:to|in)\s+(.+?)"
             r"(?=\s+(?:for|на)\s+\d+\s*(?:nights?|ноч(?:ей|и|ь)?)|"
@@ -1177,7 +1186,7 @@ class TelegramPlanningService:
         if direct_route:
             return " ".join(direct_route.group(1).split()).strip(" ,") or None
         match = re.search(
-            r"(?:хочу(?:\s+поехать)?|поездк\w*|trip|travel)?\s*(?:в|in|to)\s+(.+?)"
+            r"(?:хочу(?:\s+поехать)?|поездк\w*|trip|travel)?\s*\b(?:в|in|to)\b\s+(.+?)"
             r"(?=\s+(?:на|for)\s+\d+\s*(?:ноч|night|дн|day)|\s+(?:за|under|до|budget|бюджет)\b|"
             r"\s+(?:из|from)\b|,|$)",
             text,
