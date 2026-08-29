@@ -147,7 +147,11 @@ class TelegramDemoService:
             type="flight_delay",
             flight="LO351",
             old_arrival=datetime(2026, 8, 20, 18, 0, tzinfo=UTC),
-            new_arrival=datetime(2026, 8, 20, 19, 45, tzinfo=UTC),
+            # This controlled scenario crosses the statutory three-hour
+            # threshold. It lets the demo show a truthful, reviewable EU261
+            # claim after recovery rather than implying that a 105-minute
+            # missed connection itself earns compensation.
+            new_arrival=datetime(2026, 8, 20, 21, 15, tzinfo=UTC),
             context={"source": "isolated_telegram_demo", "airline_fault": True},
         )
         impact = await self._impact.process(event)
@@ -333,7 +337,7 @@ class TelegramDemoService:
             parse_mode="HTML",
             button_rows=[
                 [TelegramButton(text="Return to live simulation", callback_data="demo:start")],
-                [TelegramButton(text="Launch +105 min disruption", callback_data="demo:trigger")],
+                [TelegramButton(text="Launch +195 min disruption", callback_data="demo:trigger")],
             ],
         )
 
@@ -367,7 +371,7 @@ class TelegramDemoService:
             parse_mode="HTML",
             button_rows=[
                 [TelegramButton(text="Return to live simulation", callback_data="demo:start")],
-                [TelegramButton(text="Launch +105 min disruption", callback_data="demo:trigger")],
+                [TelegramButton(text="Launch +195 min disruption", callback_data="demo:trigger")],
             ],
         )
 
@@ -393,7 +397,7 @@ class TelegramDemoService:
             button_rows=[
                 [
                     TelegramButton(
-                        text="Simulate verified +105 min delay",
+                        text="Simulate verified +195 min delay",
                         callback_data="demo:trigger",
                     )
                 ],
@@ -477,7 +481,7 @@ class TelegramDemoService:
         return TelegramView(
             text=(
                 "<b>Connection at risk</b>\n"
-                "<code>OFFICIAL DELAY · LO351 +105 MIN</code>\n\n"
+                "<code>OFFICIAL DELAY · LO351 +195 MIN</code>\n\n"
                 "Your Munich connection is no longer feasible.\n\n"
                 "<b>I handled safely</b>\n"
                 "✓ transfer adjusted\n"

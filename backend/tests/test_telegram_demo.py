@@ -69,6 +69,11 @@ async def test_demo_runs_before_onboarding_without_gemini_and_recovers() -> None
             json=callback_update(12, approved.json()["button_rows"][0][0]["callback_data"]),
             headers=headers,
         )
+        claim = await client.post(
+            "/telegram/webhook",
+            json=callback_update(13, proof.json()["button_rows"][0][0]["callback_data"]),
+            headers=headers,
+        )
         expense = await client.post(
             "/telegram/webhook",
             json=callback_update(6, "demo:expense"),
@@ -119,6 +124,8 @@ async def test_demo_runs_before_onboarding_without_gemini_and_recovers() -> None
     assert len(approved.json()["button_rows"]) == 1
     assert approved.json()["button_rows"][0][0]["callback_data"].startswith("demo:proof:")
     assert "4/4 RECOVERY STEPS VERIFIED" in proof.json()["text"]
+    assert "EU261 STATUTORY COMPENSATION" in claim.json()["text"]
+    assert "€250.00" in claim.json()["text"]
     assert "€61.40" in expense.json()["text"]
     assert "€61.40" in duplicate_expense.json()["text"]
     assert "NEEDS ATTENTION" in readiness.json()["text"]
