@@ -2,9 +2,10 @@ from datetime import UTC, date, datetime
 
 import pytest
 from app.models.enums import OnboardingStep, TripStatus
-from app.models.planning import TravelPlanRequest
+from app.models.planning import FlexibleTravelPlanRequest, TravelPlanRequest
 from app.models.telegram import TravelerProfile
 from app.models.trip_intake import TripDraft
+from app.services.firestore import _trip_draft_from_payload
 from app.services.memory import InMemoryIncidentRepository
 from app.services.telegram_planning import DeterministicTripPlanner, TelegramPlanningService
 
@@ -231,6 +232,30 @@ async def test_complete_rephrased_brief_replaces_a_stale_planning_draft() -> Non
     assert draft.planning_request.origin == "Warsaw"
     assert draft.planning_request.destination == "Paris"
     assert getattr(draft.planning_request, "nights", None) == 6
+
+
+def test_incompatible_planning_cache_is_repaired_without_losing_the_draft() -> None:
+    now = datetime(2026, 8, 23, tzinfo=UTC)
+    draft = TripDraft(
+        draft_id="telegram-draft:101",
+        owner_user_id="telegram:101",
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        planning_request=FlexibleTravelPlanRequest(
+            destination="Paris", origin="Warsaw", nights=6, budget_eur=600
+        ),
+        created_at=now,
+        updated_at=now,
+    )
+    payload = draft.model_dump(mode="json")
+    payload["planning_options"] = [{"legacy_shape": True}]
+
+    repaired = _trip_draft_from_payload(payload)
+
+    assert repaired.draft_id == draft.draft_id
+    assert repaired.telegram_chat_id == draft.telegram_chat_id
+    assert repaired.planning_request is None
+    assert repaired.planning_options == []
 
 
 @pytest.mark.asyncio

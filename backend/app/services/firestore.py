@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date, datetime
 from typing import Any
 
@@ -39,6 +40,8 @@ from app.models.trip_intake import TripDraft
 from app.models.watch import GroundedTravelSignal, TripWatchpoint
 from app.services.canonical_hash import canonical_hash, grounded_signal_hash
 from app.services.ports import ClaimResult, EventPayloadConflict, TripCreateConflict
+
+logger = logging.getLogger(__name__)
 
 
 async def _delete_refs(client: Any, refs: list[Any]) -> None:
@@ -82,6 +85,34 @@ def _firestore_trip_payload(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(_firestore_trip_payload(item) for item in value)
     return value
+
+
+def _trip_draft_from_payload(payload: dict[str, Any]) -> TripDraft:
+    """Read old drafts without allowing a stale planning cache to block a trip.
+
+    Planning alternatives are disposable. If a prior deployment stored an
+    incompatible cached option, preserve the imported itinerary and clear only
+    that cache so the traveller can immediately make a fresh request.
+    """
+
+    try:
+        return TripDraft.model_validate(payload)
+    except ValueError:
+        repaired = dict(payload)
+        repaired.update(
+            {
+                "planning_context": None,
+                "planning_request": None,
+                "planning_options": [],
+                "selected_plan_id": None,
+                "planning_saved_at": None,
+            }
+        )
+        logger.warning(
+            "repaired incompatible planning cache in trip draft",
+            extra={"error_code": "TRIP_DRAFT_PLANNING_CACHE_REPAIRED"},
+        )
+        return TripDraft.model_validate(repaired)
 
 
 class FirestoreIncidentRepository:
@@ -430,7 +461,7 @@ class FirestoreIncidentRepository:
         snapshot = await self._client.collection("tripDrafts").document(telegram_user_id).get()
         if not snapshot.exists:
             return None
-        return TripDraft.model_validate(snapshot.to_dict())
+        return _trip_draft_from_payload(snapshot.to_dict() or {})
 
     async def save_trip_draft(
         self, *, draft: TripDraft, expected_version: int | None
@@ -447,7 +478,7 @@ class FirestoreIncidentRepository:
                 stored = draft.model_copy(update={"version": 1})
                 transaction.create(draft_ref, stored.model_dump(mode="json"))
                 return stored
-            current = TripDraft.model_validate(snapshot.to_dict())
+            current = _trip_draft_from_payload(snapshot.to_dict() or {})
             if (
                 expected_version != current.version
                 or current.owner_user_id != draft.owner_user_id
