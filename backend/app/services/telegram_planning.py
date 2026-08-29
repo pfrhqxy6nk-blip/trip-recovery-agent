@@ -877,13 +877,16 @@ class TelegramPlanningService:
         for index, option in enumerate(draft.planning_options, start=1):
             source_label = "live" if option.availability == "LIVE" else "estimate"
             text.append(
-                f"\n<b>{index} · {escape(option.title)}</b> · "
+                f"\n<b>{index} · {escape(TelegramPlanningService._brief(option.title, 44))}</b> · "
                 f"€{option.estimated_total_eur} · {source_label}"
             )
             text.append(TelegramPlanningService._option_details(option))
             remaining = request.budget_eur - option.estimated_total_eur
             fit = "within budget" if remaining >= 0 else f"€{abs(remaining)} over budget"
-            text.append(f"<i>{fit} · {escape(option.resilience_note)}</i>")
+            resilience = TelegramPlanningService._brief(option.resilience_note, 96)
+            text.append(
+                f"<i>{fit} · {escape(resilience)}</i>"
+            )
             if option.source_links:
                 text.append(TelegramPlanningService._source_links_view(option))
             rows.append(
@@ -894,7 +897,50 @@ class TelegramPlanningService:
                     )
                 ]
             )
-        return TelegramView(text="\n".join(text), parse_mode="HTML", button_rows=rows)
+        rendered = "\n".join(text)
+        # Telegram rejects messages over 4,096 characters. A live Search
+        # result can contain unusually verbose supplier names or cancellation
+        # terms, so prefer a clean compact receipt to an error or a cut tag.
+        if len(rendered) > 3_800:
+            rendered = TelegramPlanningService._compact_options_view(
+                request=request, trip_meta=trip_meta, options=draft.planning_options
+            )
+        return TelegramView(text=rendered, parse_mode="HTML", button_rows=rows)
+
+    @staticmethod
+    def _brief(value: str, limit: int) -> str:
+        normalized = " ".join(value.split())
+        return normalized if len(normalized) <= limit else normalized[: limit - 1].rstrip() + "…"
+
+    @staticmethod
+    def _compact_options_view(
+        *, request: PlanningRequest, trip_meta: str, options: list[TravelPlanOption]
+    ) -> str:
+        lines = [
+            f"<b>Planning {escape(request.destination)}</b> · {trip_meta} · €{request.budget_eur}",
+            "Three shortlist options. Prices are estimates, not bookings.",
+        ]
+        for index, option in enumerate(options, start=1):
+            transport = option.transport
+            stay = option.stay
+            mode = {"FLIGHT": "flight", "TRAIN": "rail", "BUS": "coach"}.get(
+                transport.mode, "transport"
+            ) if transport else "transport"
+            transport_price = transport.price_eur if transport else option.estimated_total_eur
+            stay_name = TelegramPlanningService._brief(stay.name, 46) if stay else "stay to verify"
+            stay_price = stay.price_eur if stay else 0
+            lines.append(
+                f"\n<b>{index} · {escape(TelegramPlanningService._brief(option.title, 40))}</b> · "
+                f"€{option.estimated_total_eur}\n"
+                f"{mode.title()} €{transport_price} · {escape(stay_name)} €{stay_price}"
+            )
+            if option.source_links:
+                url = option.source_links[0]
+                lines.append(
+                    f'<a href="{escape(url, quote=True)}">Open source</a> · '
+                    f"{escape(TelegramPlanningService._brief(option.resilience_note, 70))}"
+                )
+        return "\n".join(lines)
 
     @staticmethod
     def _option_details(option: TravelPlanOption) -> str:
@@ -910,13 +956,16 @@ class TelegramPlanningService:
         depart = transport.departure_at.strftime("%d %b %H:%M")
         arrive = transport.arrival_at.strftime("%H:%M")
         transport_line = (
-            f"{icon} <b>{escape(transport.provider)}</b> {escape(transport.service)} · "
-            f"{escape(transport.origin)} → {escape(transport.destination)} · "
+            f"{icon} <b>{escape(TelegramPlanningService._brief(transport.provider, 36))}</b> "
+            f"{escape(TelegramPlanningService._brief(transport.service, 48))} · "
+            f"{escape(TelegramPlanningService._brief(transport.origin, 32))} → "
+            f"{escape(TelegramPlanningService._brief(transport.destination, 32))} · "
             f"{depart}–{arrive} · €{transport.price_eur}"
         )
         stay_line = (
-            f"🏨 <b>{escape(stay.name)}</b> · {stay.nights} nights · €{stay.price_eur} · "
-            f"{escape(stay.cancellation)}"
+            f"🏨 <b>{escape(TelegramPlanningService._brief(stay.name, 54))}</b> · "
+            f"{stay.nights} nights · €{stay.price_eur} · "
+            f"{escape(TelegramPlanningService._brief(stay.cancellation, 92))}"
         )
         return f"{transport_line}\n{stay_line}"
 
