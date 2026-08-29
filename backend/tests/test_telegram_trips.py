@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from app.models.ai_connection import AiConnection, AiConnectionStatus
 from app.models.enums import OnboardingStep
+from app.models.monitoring import MonitoringCoverage, MonitoringSubscription
 from app.models.telegram import TravelerProfile
 from app.services.memory import InMemoryIncidentRepository
 from app.services.telegram_planning import TelegramPlanningService
@@ -51,6 +52,25 @@ async def test_pilot_trip_is_owned_isolated_and_idempotent() -> None:
     assert trip is not None and trip.owner_user_id == "telegram:101"
     assert all(item.trip_id == trip.trip_id for item in trip.items)
     assert all(dependency.trip_id == trip.trip_id for dependency in trip.dependencies)
+
+
+def test_stored_monitoring_subscription_round_trips_with_no_observation_yet() -> None:
+    now = datetime(2026, 8, 17, tzinfo=UTC)
+    subscription = MonitoringSubscription(
+        subscription_id="monitor:trip:flight",
+        trip_id="trip",
+        item_id="flight",
+        owner_user_id="telegram:101",
+        source_id="stored-schedule-v1",
+        coverage=MonitoringCoverage.SCHEDULE_STORED,
+        created_at=now,
+        updated_at=now,
+    )
+
+    restored = MonitoringSubscription.model_validate(subscription.model_dump(mode="json"))
+
+    assert restored.source_updated_at is None
+    assert restored.last_checked_at is None
 
 
 async def test_pilot_trip_requires_active_owner_and_feature_flag() -> None:
