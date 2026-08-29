@@ -708,12 +708,12 @@ class TelegramPlanningService:
             raise TelegramPlanningError("your plan changed; please choose it again")
         return TelegramView(
             text=(
-                f"Plan saved: {option.title}.\n\n"
+                f"<b>Plan saved · {escape(option.title)}</b>\n"
+                f"€{option.estimated_total_eur} estimate · your personal shortlist\n\n"
                 f"{self._option_details(option)}\n\n"
-                "I will not pretend an estimate is a confirmed reservation. Your plan is saved "
-                f"as a planned trip ({planned_trip_id}). Forward the actual booking when you "
-                "have it; then I will replace the estimate with verified itinerary data and "
-                "activate watchpoints."
+                "When you have the actual booking, forward the confirmation here. I’ll verify the "
+                "itinerary, "
+                "replace this estimate with real details and start Trip Watch automatically."
             ),
             parse_mode="HTML",
         )
@@ -857,18 +857,18 @@ class TelegramPlanningService:
         text = [
             f"<b>Planning {escape(request.destination)}</b> · {trip_meta} · "
             f"€{request.budget_eur}",
-            "Three routes compared for transport, stay, weather exposure and recovery slack.",
-            "Estimates, not bookings. Choose one to save a plan.",
+            "Three considered routes — transport, stay and recovery slack.",
+            "Prices are estimates, not bookings. Choose one to save your shortlist.",
         ]
         if not any(option.availability == "LIVE" for option in draft.planning_options):
             text.insert(
                 3,
-                "Live Google Search is temporarily unavailable (shared capacity). "
-                "These are bounded estimates; open the sources to verify today's price.",
+                "Live Google Search is temporarily unavailable right now. These are clearly "
+                "marked estimates; open the linked sources to verify today’s price.",
             )
         rows: list[list[TelegramButton]] = []
         for index, option in enumerate(draft.planning_options, start=1):
-            source_label = "Search-grounded" if option.availability == "LIVE" else "estimate"
+            source_label = "live" if option.availability == "LIVE" else "estimate"
             text.append(
                 f"\n<b>{index} · {escape(option.title)}</b> · "
                 f"€{option.estimated_total_eur} · {source_label}"
@@ -876,7 +876,7 @@ class TelegramPlanningService:
             text.append(TelegramPlanningService._option_details(option))
             remaining = request.budget_eur - option.estimated_total_eur
             fit = "within budget" if remaining >= 0 else f"€{abs(remaining)} over budget"
-            text.append(f"{fit} · {escape(option.resilience_note)}")
+            text.append(f"<i>{fit} · {escape(option.resilience_note)}</i>")
             if option.source_links:
                 text.append(TelegramPlanningService._source_links_view(option))
             rows.append(

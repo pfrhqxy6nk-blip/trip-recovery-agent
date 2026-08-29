@@ -298,7 +298,7 @@ class TelegramRecoveryService:
             )
             actions = await self._repository.list_actions(incident_id)
             verified = [
-                action.category.value.lower().replace("_", " ")
+                self._action_label(action.category.value)
                 for action in actions
                 if action.execution_status == ActionStatus.VERIFIED
             ]
@@ -316,28 +316,19 @@ class TelegramRecoveryService:
                 view.button_rows = [
                     [
                         TelegramButton(
-                            text="Continue · cost memory",
-                            callback_data="demo:expense",
-                        )
-                    ],
-                    [
-                        TelegramButton(
-                            text="Open action proof",
+                            text="View recovery receipt",
                             callback_data=f"demo:proof:{incident_id}",
                         )
-                    ],
-                    [TelegramButton(text="Open agent map", callback_data="demo:lifecycle")],
-                    [TelegramButton(text="Activate my agent", callback_data="onboard:setup")],
+                    ]
                 ]
                 view.text = (
-                    "<b>RECOVERY VERIFIED · 3/5</b>\n"
-                    "<code>TRIP GRAPH  COHERENT</code>\n\n"
+                    "<b>RECOVERY VERIFIED · Trip recovered</b>\n"
+                    "<code>VERIFIED · NO OPEN CONFLICTS</code>\n\n"
                     f"{checklist}\n"
                     "✓ no unresolved itinerary conflicts\n\n"
                     "<b>New arrival · 23:15</b>\n\n"
-                    "Observed 1 disruption · repaired 4 dependencies · "
-                    "interrupted you 1 time.\n\n"
-                    "Every provider effect was reread and verified before this message."
+                    "I handled the safe steps, then asked once for the €34 flight change. "
+                    "Nothing else needs your attention."
                 )
                 view.parse_mode = "HTML"
             elif (
@@ -496,7 +487,13 @@ class TelegramRecoveryService:
 
     @staticmethod
     def _action_label(category: str) -> str:
-        return category.lower().replace("_", " ")
+        labels = {
+            "FLIGHT_CHANGE": "replacement flight verified",
+            "TRANSFER_ADJUSTMENT": "airport transfer adjusted",
+            "SERVICE_MESSAGE": "late-arrival note prepared",
+            "CALENDAR_UPDATE": "trip timeline refreshed",
+        }
+        return labels.get(category, category.lower().replace("_", " "))
 
     @staticmethod
     def _status_marker(status: ActionStatus) -> str:

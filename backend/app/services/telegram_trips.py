@@ -437,12 +437,12 @@ class TelegramTripService:
         )
         return TelegramView(
             text=(
-                f"<b>Trip protected.</b>\n\n"
-                f"I saved {result.item_count} itinerary item(s) and set {len(watchpoints)} "
-                f"focused checks for {watch_types}.\n\n"
+                f"<b>Trip protected. Trip Watch is on.</b>\n\n"
+                f"{result.item_count} itinerary item(s) · {len(watchpoints)} focused checks\n"
+                f"Watching: {watch_types}.\n\n"
                 f"{watch_status}\n\n"
-                "You do not need to manage a dashboard — just keep chatting when something "
-                "changes."
+                "I write first only when a sourced change affects this trip or needs your "
+                "decision."
             ),
             parse_mode="HTML",
         )

@@ -188,10 +188,10 @@ class TelegramDemoService:
         ):
             raise TelegramDemoError("recovery proof is incomplete")
         labels = {
-            "FLIGHT_CHANGE": "replacement flight confirmed",
+            "FLIGHT_CHANGE": "replacement flight verified",
             "TRANSFER_ADJUSTMENT": "airport transfer adjusted",
-            "SERVICE_MESSAGE": "hotel late-arrival update recorded",
-            "CALENDAR_UPDATE": "calendar time updated",
+            "SERVICE_MESSAGE": "late-arrival note prepared",
+            "CALENDAR_UPDATE": "trip timeline refreshed",
         }
         verified = "\n".join(
             f"✓ {labels.get(action.category.value, action.category.value.lower())}"
@@ -200,7 +200,7 @@ class TelegramDemoService:
         return TelegramView(
             text=(
                 "<b>RECOVERY RECEIPT</b>\n"
-                "<code>4/4 external effects verified</code>\n\n"
+                "<code>4/4 RECOVERY STEPS VERIFIED</code>\n\n"
                 f"{verified}\n"
                 "✓ itinerary conflict check passed\n\n"
                 "<b>Authority trace</b>\n"
@@ -214,12 +214,9 @@ class TelegramDemoService:
             button_rows=[
                 [
                     TelegramButton(
-                        text="Claim €250 (EU261)", callback_data=f"demo:claim:{incident_id}"
+                        text="Review €250 claim", callback_data=f"demo:claim:{incident_id}"
                     )
-                ],
-                [TelegramButton(text="Continue · cost memory", callback_data="demo:expense")],
-                [TelegramButton(text="Replay simulation", callback_data="demo:start")],
-                [TelegramButton(text="Activate my agent", callback_data="onboard:setup")],
+                ]
             ],
         )
 
@@ -271,8 +268,11 @@ class TelegramDemoService:
             ),
             parse_mode="HTML",
             button_rows=[
-                [TelegramButton(text="Back to proof", callback_data=f"demo:proof:{incident_id}")],
-                [TelegramButton(text="Continue · cost memory", callback_data="demo:expense")],
+                [
+                    TelegramButton(
+                        text="Back to receipt", callback_data=f"demo:proof:{incident_id}"
+                    )
+                ]
             ],
         )
 
