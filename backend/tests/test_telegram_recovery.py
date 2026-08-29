@@ -111,7 +111,7 @@ async def test_details_is_read_only_and_approval_recovers_trip_once() -> None:
     assert waiting is not None and waiting.status == IncidentStatus.WAITING_APPROVAL
     assert approved.text.startswith("Approval recorded")
     assert recovered.text.startswith("Trip recovered")
-    assert duplicate.text.startswith("Trip recovered")
+    assert duplicate.text == "Recovery already verified. Nothing else needs your approval."
     assert len(repository.effects) == 4
 
 

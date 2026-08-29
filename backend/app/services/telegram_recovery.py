@@ -118,6 +118,12 @@ class TelegramRecoveryService:
         is_demo = incident is not None and incident.external_event_id.startswith("telegram-demo:")
         if prefix == "d":
             return await self._details_view(approval, token, now)
+        # Telegram can retry a callback after the app has already completed the
+        # durable approval transaction.  Do not replay the entire recovery
+        # status card: that makes a calm, one-decision interaction look like
+        # two separate recovery events to the traveler.
+        if prefix == "a" and approval.status != ApprovalStatus.PENDING:
+            return TelegramView(text="Recovery already verified. Nothing else needs your approval.")
         if prefix == "c":
             if approval.status != ApprovalStatus.PENDING or approval.expires_at <= now:
                 return await self.status_view(approval.incident_id, IncidentStatus.WAITING_APPROVAL)
