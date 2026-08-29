@@ -375,28 +375,28 @@ class TelegramDemoService:
     def trip_view() -> TelegramView:
         return TelegramView(
             text=(
-                "<b>LIVE SIMULATION · 1/5</b>\n"
-                "<code>AGENT STATE  WATCHING</code>\n\n"
+                "<b>Trip Watch is active</b>\n"
+                "<code>JUDGE STORY · READY FOR A LIVE SIGNAL</code>\n\n"
                 "<b>Warsaw → Munich → Lisbon</b>\n"
                 "20 August · 2 flights · hotel · transfer\n\n"
-                "<b>Trip memory</b>\n"
-                "✓ bookings connected\n"
-                "✓ timing graph calculated\n"
-                "✓ policy loaded · auto limit €20\n"
-                "✓ Munich connection · 55 min\n"
-                "✓ <b>Predictive Shadow Hold active</b>\n"
-                "✓ <b>Visa & Baggage Guardian screened</b>\n\n"
-                "Everything is stable. Launch one controlled signal and watch the agent "
-                "reason across the whole trip.\n\n"
-                "<i>Simulation only — no real booking will change.</i>"
+                "<b>Already checked</b>\n"
+                "✓ connection buffer · 55 min\n"
+                "✓ Lisbon route weather · monitoring enabled\n"
+                "✓ baggage transfer · feasible\n"
+                "✓ passport transit screen · clear\n"
+                "✓ Shadow fare lock · €34\n\n"
+                "When an official airline signal changes this trip, I act on safe steps "
+                "first and ask only for a paid decision.\n\n"
+                "<i>Controlled demo signal — no real booking changes.</i>"
             ),
             parse_mode="HTML",
             button_rows=[
-                [TelegramButton(text="Launch +105 min disruption", callback_data="demo:trigger")],
-                [TelegramButton(text="Open Shadow Tree & Fare Lock", callback_data="demo:shadow")],
-                [TelegramButton(text="Visa & Baggage Guardian", callback_data="demo:guardian")],
-                [TelegramButton(text="Open agent map", callback_data="demo:lifecycle")],
-                [TelegramButton(text="Run readiness scan", callback_data="demo:readiness")],
+                [
+                    TelegramButton(
+                        text="Simulate verified +105 min delay",
+                        callback_data="demo:trigger",
+                    )
+                ],
             ],
         )
 
@@ -476,19 +476,16 @@ class TelegramDemoService:
         token = result.approval_callback_token
         return TelegramView(
             text=(
-                "<b>IMPACT RESOLVED · 2/5</b>\n"
-                "<code>ONE DECISION REQUIRED</code>\n\n"
-                "<b>What changed</b>\n"
-                "LO351 +105 min → connection buffer -50 min → connection impossible\n\n"
-                "<b>Downstream impact</b>\n"
-                "Munich transfer · hotel arrival · calendar · replacement flight\n\n"
-                "<b>Autonomous work · verified</b>\n"
+                "<b>Connection at risk</b>\n"
+                "<code>OFFICIAL DELAY · LO351 +105 MIN</code>\n\n"
+                "Your Munich connection is no longer feasible.\n\n"
+                "<b>I handled safely</b>\n"
                 "✓ transfer adjusted\n"
-                "✓ hotel late-arrival update\n"
-                "✓ calendar updated\n\n"
-                "<b>Decision boundary</b>\n"
-                "Replacement flight +€34 · your automatic limit €20\n\n"
-                "I handled everything inside your policy. This exact purchase needs you."
+                "✓ late-arrival note prepared\n"
+                "✓ trip timeline refreshed\n"
+                "✓ weather and baggage constraints rechecked\n\n"
+                "One decision remains: the locked replacement flight is €34. "
+                "Your auto limit is €20."
             ),
             parse_mode="HTML",
             button_rows=[

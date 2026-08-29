@@ -107,8 +107,10 @@ async def test_demo_runs_before_onboarding_without_gemini_and_recovers() -> None
     assert start.status_code == 200
     assert start.json()["button_rows"][0][0]["callback_data"] == "onboard:setup"
     assert "demo" not in start.json()["text"].lower()
-    assert "AGENT STATE  WATCHING" in trip.json()["text"]
-    assert "IMPACT RESOLVED" in recovery_card.json()["text"]
+    assert "Trip Watch is active" in trip.json()["text"]
+    assert len(trip.json()["button_rows"]) == 1
+    assert "Connection at risk" in recovery_card.json()["text"]
+    assert "weather and baggage constraints rechecked" in recovery_card.json()["text"]
     assert "Approve +€34" == recovery_card.json()["button_rows"][0][0]["text"]
     assert details.json()["button_rows"][0][0]["callback_data"] == approve_callback
     assert approved.status_code == 200
