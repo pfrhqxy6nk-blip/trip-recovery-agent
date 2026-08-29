@@ -24,6 +24,18 @@ async def test_media_fallback_reads_caption_without_inventing_a_booking() -> Non
     assert request.flights[0].booking_reference == "ABC123"
 
 
+def test_gemini_response_with_unavailable_text_is_reported_as_a_parse_failure() -> None:
+    class IncompleteResponse:
+        parsed = None
+
+        @property
+        def text(self) -> str:
+            raise AttributeError("response text is unavailable")
+
+    with pytest.raises(ValueError, match="empty itinerary media response"):
+        ItineraryExtractor._parse_gemini_response(IncompleteResponse(), "itinerary media")
+
+
 @pytest.mark.asyncio
 async def test_media_fallback_reads_apple_wallet_pass_json() -> None:
     payload = (

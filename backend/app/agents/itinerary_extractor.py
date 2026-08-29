@@ -101,20 +101,29 @@ class ItineraryExtractor:
             "Return structured JSON conforming to the TripImportRequest schema."
         )
 
-        response = await client.aio.models.generate_content(
-            model=self.model_id,
-            contents=[
-                types.Part.from_bytes(data=media_bytes, mime_type=resolved_mime),
-                types.Part.from_text(text=f"{prompt}\nAdditional user notes: {caption}"),
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-                response_schema=TripImportRequest,
-            ),
-        )
-
-        parsed = self._parse_gemini_response(response, "itinerary media")
+        try:
+            response = await client.aio.models.generate_content(
+                model=self.model_id,
+                contents=[
+                    types.Part.from_bytes(data=media_bytes, mime_type=resolved_mime),
+                    types.Part.from_text(text=f"{prompt}\nAdditional user notes: {caption}"),
+                ],
+                config=types.GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema=TripImportRequest,
+                ),
+            )
+            parsed = self._parse_gemini_response(response, "itinerary media")
+        except Exception:
+            # A provider response can be incomplete while its text accessor raises
+            # (for example after a temporary safety or capacity stop).  A forwarded
+            # booking must still take the deterministic, evidence-only path before
+            # we ask the traveler to resend it; never surface a raw SDK exception in
+            # Telegram and never fabricate facts from an unreadable document.
+            extracted_text = self._media_text(media_bytes, resolved_mime)
+            combined = "\n".join(part for part in (caption.strip(), extracted_text) if part)
+            return self._extract_deterministic(combined, now, require_signal=True)
         # Vision can occasionally omit a low-salience hotel row while correctly
         # extracting the flights.  PDFs often include a trustworthy text layer;
         # use it only to fill missing fields, never to overwrite Gemini's values.
@@ -194,7 +203,10 @@ class ItineraryExtractor:
                 return TripImportRequest.model_validate(parsed)
             except (TypeError, ValueError):
                 pass
-        raw_text = str(getattr(response, "text", "") or "").strip()
+        try:
+            raw_text = str(getattr(response, "text", "") or "").strip()
+        except (AttributeError, RuntimeError, TypeError) as exc:
+            raise ValueError(f"Gemini returned empty {label} response") from exc
         if raw_text.startswith(chr(96) * 3):
             raw_text = re.sub(
                 r"^\x60{3}(?:json)?\s*|\s*\x60{3}$",
