@@ -64,6 +64,13 @@ async def _advance_recovery_for_owner(incident_id: str, request: Request) -> Non
     incident = await container.repository.get_incident(incident_id)
     if incident is None:
         return
+    # The Telegram demo deliberately runs recovery inline so every step edits
+    # one calm message in the scripted flow.  Do not let its durable workflow
+    # command re-enter this live-notification path afterwards: that used to
+    # append a second, generic approval card after the demo was already
+    # recovered.
+    if incident.external_event_id.startswith("telegram-demo:"):
+        return
     trip = await container.repository.get_trip(incident.trip_id)
     if trip is None or trip.owner_user_id is None:
         return
