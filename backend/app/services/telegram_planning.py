@@ -595,8 +595,15 @@ class TelegramPlanningService:
                 raise TelegramPlanningError("your planning draft changed; please try again")
             return self._clarification_view(context)
         if request is None:
-            previous_context = draft.planning_context or self._context_from_request(
-                draft.planning_request
+            # A complete concierge brief starts a new search. It must never
+            # inherit a stale city, date or malformed earlier draft just
+            # because the traveller reformulated the request after a provider
+            # timeout.
+            previous_context = (
+                None
+                if self._is_complete_natural_brief(text)
+                else draft.planning_context
+                or self._context_from_request(draft.planning_request)
             )
             # When the bot asks only for a departure city, users naturally
             # answer with a bare value ("Kyiv", "Berlin") rather than "from
@@ -1039,6 +1046,19 @@ class TelegramPlanningService:
         # A follow-up such as "из Киева, 2026-10-10" must reach the persisted draft.
         is_follow_up = bool(re.search(r"^(?:из|from)\b", normalized))
         return (has_trip_verb and has_trip_shape) or is_follow_up
+
+    @classmethod
+    def _is_complete_natural_brief(cls, text: str) -> bool:
+        """Return whether a message carries a full fresh planning intent."""
+
+        return all(
+            (
+                cls._extract_destination(text),
+                cls._extract_origin(text),
+                cls._extract_nights(text),
+                cls._extract_budget(text),
+            )
+        )
 
     @classmethod
     def _natural_context(cls, text: str, previous: TravelPlanContext | None) -> TravelPlanContext:

@@ -202,6 +202,38 @@ async def test_concierge_brief_does_not_parse_in_inside_train_as_destination() -
 
 
 @pytest.mark.asyncio
+async def test_complete_rephrased_brief_replaces_a_stale_planning_draft() -> None:
+    """Retrying after an earlier malformed search must not blend old trip facts."""
+
+    repository = await active_repository()
+    service = TelegramPlanningService(repository)
+    now = datetime(2026, 8, 23, tzinfo=UTC)
+
+    await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text="I want Rome for 4 nights from Kyiv, under €700.",
+        now=now,
+    )
+    view = await service.handle_message(
+        telegram_user_id="101",
+        telegram_chat_id="202",
+        text=(
+            "I want Paris for 6 nights from Warsaw, under €600. "
+            "Compare a direct flight with train alternatives and a central refundable hotel."
+        ),
+        now=now,
+    )
+
+    draft = await repository.get_trip_draft("101")
+    assert draft is not None and draft.planning_request is not None
+    assert "Planning Paris" in view.text
+    assert draft.planning_request.origin == "Warsaw"
+    assert draft.planning_request.destination == "Paris"
+    assert getattr(draft.planning_request, "nights", None) == 6
+
+
+@pytest.mark.asyncio
 async def test_natural_language_trip_brief_does_not_absorb_month_or_previous_plan() -> None:
     """The common concierge-style request must be parsed as fresh, usable facts."""
 
