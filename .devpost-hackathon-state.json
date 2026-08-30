@@ -15,8 +15,8 @@
   "project": {
     "name": "Trip Recovery Agent",
     "summary": "A Telegram-first autonomous recovery layer for already-booked trips that repairs safe downstream consequences and interrupts the traveler only for consequential decisions.",
-    "ai_usage": "",
-    "codex_usage": ""
+    "ai_usage": "Gemini through Vertex AI and Google ADK handles multimodal itinerary extraction, grounded interpretation, ranking, and concise explanations. Deterministic code retains authority for policy, money, timing, state, idempotency, and verification.",
+    "codex_usage": "Codex supported product planning, implementation, iterative Telegram QA, testing, documentation, architecture refinement, landing iteration, and submission preparation."
   },
   "current_stage": "prepare-submission",
   "completed_stages": [

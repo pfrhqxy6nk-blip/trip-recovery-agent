@@ -1,168 +1,168 @@
 # Title
 
-Trip Recovery Agent
-
-This is a local submission draft only. Use [SUBMISSION_GATE.md](docs/SUBMISSION_GATE.md)
-for the final live acceptance, security, and owner-supplied Devpost fields. Nothing is
-published from this repository by the checklist.
+Trip Watch
 
 ## One-line Summary
 
-A Telegram-first autonomous travel agent that watches an itinerary, repairs safe downstream consequences, and interrupts the traveler only for consequential decisions.
+A Telegram-first autonomous travel agent that turns bookings into protected trips: it understands travel documents, watches for disruption, repairs safe consequences, and asks only when a decision needs the traveler.
 
 ## Problem
 
-Travel disruptions are not isolated alerts. A delayed flight can make a connection, airport transfer, hotel arrival, and calendar entry wrong at the same time. Travelers usually discover each consequence manually, across several apps, while under time pressure.
+Travel disruption is a dependency problem, not an alert problem. A delayed inbound flight can invalidate a connection, luggage transfer, airport pickup, hotel arrival, and calendar at once. Today, the traveler has to detect each consequence across multiple apps while stressed and moving through an airport.
 
 ## Solution
 
-Trip Recovery Agent turns an existing booking into a persistent trip graph. A traveler can start in Telegram, forward a ticket or booking artifact, and receive a structured itinerary. The agent validates external signals, computes downstream impact, performs policy-allowed reversible work, and asks for approval only when money, ambiguity, penalties, or irreversible changes are involved. The workflow resumes from durable state after approval and verifies the resulting state before reporting recovery.
+Trip Watch creates a durable trip graph from a traveler’s booking. The traveler can either plan a new trip in normal language or forward a PDF ticket, booking confirmation, screenshot, email, or `.pkpass` file. Gemini extracts and interprets bounded facts; deterministic code validates the itinerary, calculates the blast radius of an event, applies the traveler’s autonomy policy, and drives a persistent recovery workflow.
+
+The agent acts first only where it is safe and authorized. It sends a proactive Telegram update, handles reversible downstream work, and returns a single approval only when a choice involves money, a penalty, ambiguity, or an irreversible change. After approval, it resumes from Firestore, verifies the effects, and sends a recovery receipt.
 
 ## Why This Matters
 
-The product promise is: always informed, rarely interrupted. It removes coordination work without hiding authority boundaries or inventing certainty. The canonical demo shows a 105-minute Warsaw → Munich disruption, three safe updates, a +€34 flight decision against a €20 automatic limit, persistent approval resume, and a verified recovery receipt.
+Trip Watch removes the coordination burden that makes small disruptions expensive and stressful. It does not hide decision-making behind an LLM: the traveler stays in control of consequential actions while the agent handles the time-sensitive work in the background.
 
 ## How We Used AI
 
-- Google ADK and Gemini through Vertex AI provide structured interpretation and ranking/explanation where language or public-source context is needed.
-- Gemini Vision/Document handling is used for forwarded PDFs, Booking/Airbnb confirmations, screenshots, and Apple Wallet `.pkpass` files. The extractor returns PNR, flight/date/time/terminal details, hotel stays, and connection facts; the offline fallback refuses to invent missing explicit times and never creates a synthetic flight for a hotel-only booking.
-- Google Search-grounded Trip Watch accepts a signal only with source metadata. Official airline/airport evidence is distinguished from a lead that still needs review.
-- Compensation assessment covers EU261, UK261, and US DOT paths. Claim drafts remain review-only and require explicit airline-fault evidence before an incident can be claim-ready.
-- Deterministic code owns policy, impact, state transitions, money, idempotency, and verification; Gemini cannot authorize a prohibited external action.
+- **Gemini 3.5 Flash+ through Vertex AI** powers multimodal itinerary extraction from forwarded documents and grounded interpretation of bounded public travel signals.
+- **Google ADK** provides the agent boundary around Gemini. Model output is treated as untrusted and validated before it can affect the workflow.
+- Gemini explains and ranks only validated facts. It cannot invent a fare, approve a payment, decide a connection is feasible, or execute a provider action.
+- The agent uses Gemini/Google Search grounding for planning and Trip Watch when grounding evidence is available. When it is unavailable, the user sees an explicitly labelled estimate rather than false real-time inventory.
+- The project’s differentiator is the separation between probabilistic reasoning and deterministic authority: code owns money, policy, temporal feasibility, idempotency, state transitions, and verification.
 
 ## How We Used Codex
 
-Codex was used to turn the product direction into the PRD, architecture, state-machine contracts, and milestone plan; implement the FastAPI/ADK/Firestore/Pub/Sub/Telegram slices; generate and refine the landing experience; add multimodal intake and compensation safeguards; run pytest, Ruff, mypy, landing build/Sites tests, diff checks, and security-oriented scans; and prepare the Google Cloud proof and this local Devpost draft. The build notes record the decisions and the boundaries between demo adapters and real providers.
+Codex was used as a development collaborator for product planning, implementation, code review, iterative Telegram QA, tests, landing refinement, architecture documentation, and reproducibility checks. It helped turn a traveler journey into a durable Google Cloud workflow while keeping the product’s claims and demo boundaries explicit. AI coding assistance was used during the contest period; the project story, architecture, implementation choices, and submitted work are the entrant’s original product work.
 
 ## Key Features
 
-- Telegram `/start`, resumable onboarding, `/settings`, policy versioning, approval, details, stop/resume, and duplicate-safe callbacks.
-- Chat-first trip planning: write a destination, nights, origin/date, budget, and interests in
-  plain language; the agent asks for only missing fields and returns grounded options before a
-  real booking is forwarded.
-- Multimodal itinerary intake for PDF, Booking/Airbnb confirmation, screenshot, and `.pkpass` metadata, with ownership, explicit confirmation, hotel-only support, and a 12 MiB/magic-byte upload guard.
-- Persistent trip graph and deterministic impact engine for flights, connections, hotels, transfers, activities, weather, and calendar dependencies.
-- Background/event-driven workflow: Pub/Sub → authenticated Cloud Run worker → Firestore state → Telegram delivery.
-- Autonomous safe actions with cumulative spending limits, immutable approvals, action leases, retries, effect receipts, rereads, and a strict `RECOVERED` invariant.
-- EU261/UK261/DOT compensation assessment and an owner-bound Telegram button that opens an
-  evidence-linked, reviewable claim draft after recovery (never auto-submitted).
-- Trip expense ledger, readiness checks, financial-tail closure, and a future-agent Telegram demo.
-- White-background editorial landing page with the Telegram recovery story and live bot CTA.
+- Natural-language planning with three comparable transport + hotel options, source links, budget totals, and clear `Search-grounded` versus `Estimate` labels.
+- Multimodal booking intake for PDFs, booking emails, screenshots, and `.pkpass`, with safe deterministic fallback and no fabricated itinerary data.
+- Persistent dependency graph for flights, connections, transfers, hotel arrival, weather, and calendar context.
+- Background Trip Watch with scoped watchpoints, source validation, durable notification delivery, and proactive Telegram updates.
+- Deterministic blast-radius analysis and a Visa & Baggage Guardian that escalates ambiguity rather than guessing clearance.
+- Autonomy policies, spending ceilings, one-time owner-bound approvals, idempotent provider effects, durable resume, reread verification, and recovery receipts.
+- EU261 / UK261 / DOT compensation assessment with an evidence-linked, review-only claim draft — never automatically sent.
+- Data-minimizing design: deletion command, bounded document parsing, MIME checks, PII minimization in model prompts, Secret Manager-backed optional credentials, and a private Cloud Run worker.
 
 ## Architecture
 
 ```text
-Telegram Bot API / Pub/Sub
-          │
-          ▼
-Public Cloud Run edge (secret + route validation)
-          │ authenticated IAM invocation
-          ▼
-Private Cloud Run worker (FastAPI + Google ADK)
-          ├── deterministic impact / policy / recovery engine
-          ├── Gemini on Vertex AI + optional Search grounding
-          ├── multimodal itinerary extractor
-          ├── compensation/evidence service
-          ├── Firestore transactional state + outbox
-          └── Pub/Sub and Telegram delivery adapters
+Telegram / public travel signals / controlled demo event
+                         │
+                         ▼
+   Cloud Run edge (validates Telegram request and routes commands)
+                         │ IAM-authenticated invocation
+                         ▼
+Cloud Run worker (FastAPI + Google ADK + Gemini / Vertex AI)
+   ├─ deterministic impact, policy, recovery, verification
+   ├─ multimodal extraction and grounded interpretation
+   ├─ Firestore: trips, graph, policy, incidents, outbox, receipts
+   └─ Pub/Sub: disruption events and durable workflow resume
+                         │
+                         ▼
+                 proactive Telegram result
 ```
 
-Google Cloud proof is recorded in [docs/CLOUD_PROOF.md](docs/CLOUD_PROOF.md), including the deployed worker and edge revisions, immutable image digest, authenticated edge contract, and duplicate-event behavior. A hardened Cloud Function remains available only as rollback. The architecture artifact is [docs/architecture-diagram.pdf](docs/architecture-diagram.pdf).
+Attach [docs/architecture-diagram.pdf](docs/architecture-diagram.pdf) in the Devpost form. [docs/CLOUD_PROOF.md](docs/CLOUD_PROOF.md) records verified Cloud Run, Pub/Sub, Firestore, and Vertex evidence.
 
 ## Testing Instructions
+
+### Public product links
+
+- Landing: https://trip-watch.vercel.app/
+- Telegram bot: https://t.me/tripagentai_bot
+- Repository: https://github.com/pfrhqxy6nk-blip/trip-recovery-agent
+
+### Judge flow
+
+1. Open the Telegram bot and send `/start`.
+2. Complete the brief autonomy setup.
+3. Forward `demo/fixtures/warsaw-munich-lisbon-booking.pdf` from the repository. It is synthetic and explicitly marked **DEMO ONLY / NOT VALID FOR TRAVEL**.
+4. Confirm the extracted draft and select **Save trip**.
+5. Send `/demo`, select **Simulate verified +195 min delay**, then select **Approve +€34**.
+6. Verify that the chat displays the recovery receipt and a review-only €250 EU261 claim draft.
+
+The fixture is safe to share and contains no real booking, payment, or personal information. The demo is controlled: it proves persistent workflow, policy, idempotency, and verification without claiming that a synthetic reservation was changed in the real world.
+
+### Local reproduction
 
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -e '.[dev]'
-.venv/bin/pytest -q
-.venv/bin/ruff check backend/app backend/tests cloud_function
-.venv/bin/mypy backend/app backend/tests
-git diff --check
+cp .env.example .env
+scripts/run_submission_gate.sh
+PYTHONPATH=backend .venv/bin/python -m app.demo_recovery
+```
 
+For the landing page:
+
+```bash
 cd landing
 npm install
 npm run build
 npm run test:sites
 ```
 
-Run the deterministic showcase with:
-
-```bash
-PYTHONPATH=backend .venv/bin/python -m app.demo_recovery
-```
-
-For the live pilot, send `/start` to [@tripagentai_bot](https://t.me/tripagentai_bot), choose
-`Start my trip` or `Plan a trip`, then write a natural request or forward a supported itinerary
-artifact. There is no public demo path. The first live smoke still requires a human Telegram
-message; no synthetic user update is used as proof.
-
 ## Public Demo Link
 
-`TODO: add a hosted landing URL if one is published for judging.`
-
-Live Telegram bot: [@tripagentai_bot](https://t.me/tripagentai_bot)
+https://trip-watch.vercel.app/
 
 ## Public Repository Link
 
-`TODO: confirm whether the GitHub repository should remain private. If private, share it with testing@devpost.com and cloudhackathons@google.com as required by the event.`
-
-Repository currently configured locally: `https://github.com/pfrhqxy6nk-blip/trip-recovery-agent`
+https://github.com/pfrhqxy6nk-blip/trip-recovery-agent
 
 ## Demo Video
 
-`TODO: record and add a ~4-minute video URL.`
+`TODO — add the public YouTube or Vimeo URL before submission.`
 
-Suggested sequence: problem (20s) → start in Telegram and plan “Paris, 6 nights, €600” (35s) →
-forward PDF/screenshot and show extracted itinerary (40s) → show signal validation and impact
-graph (35s) → show Telegram proactive message and three safe actions (45s) → approve +€34
-against €20 (35s) → restart/persistent resume and verified receipt (40s) → Cloud
-Run/Firestore proof and architecture (30s) → limitations and value proposition (20s).
+Suggested 4-minute sequence:
+
+1. **0:00–0:20 — Problem:** one delay destroys a chain of travel commitments.
+2. **0:20–0:45 — Value:** Trip Watch is autonomous but policy-bounded, not a chatbot.
+3. **0:45–1:20 — Intake:** forward the demo PDF in Telegram, review and save the trip.
+4. **1:20–2:30 — Background agent:** trigger the +195 minute delay; show impact, Visa & Baggage Guardian, safe actions, and one €34 approval.
+5. **2:30–3:05 — Durable result:** approve, then show the verified receipt and review-only claim draft.
+6. **3:05–3:35 — Google Cloud proof:** Cloud Run / Firestore / Pub/Sub / Vertex evidence and the architecture diagram.
+7. **3:35–4:00 — Honest close:** what is deployed now and what remains provider-gated.
+
+The video must be public and in English or include English subtitles.
 
 ## Screenshot Shot List
 
-1. Telegram `/start` onboarding with autonomy/spending policy controls.
-2. Multimodal intake: forwarded document/screenshot becoming a structured trip graph.
-3. Proactive disruption message with source, impact, actions already handled, and approval boundary.
-4. Post-approval `Trip recovered` receipt with verified actions and no unresolved conflicts.
-5. Google Cloud proof: Cloud Run revision, Pub/Sub flow, Firestore state, and the landing/Telegram experience.
+1. Minimal Telegram onboarding with the autonomy / spending policy.
+2. Synthetic PDF becoming a structured itinerary draft.
+3. A proactive disruption message showing connection impact and safe actions.
+4. The single €34 approval boundary followed by `RECOVERY VERIFIED`.
+5. Google Cloud proof and the architecture diagram.
 
 ## Submission Readiness Notes
 
-- Official event requirements checked on 2026-08-23: Gemini 3.5+; a Google Agent Framework; Google Cloud; repository URL; architecture diagram; required demo video; required fields for category, project start date, repo, reproducible testing, Google SDKs/services, and AI models.
-- Live Devpost judging criteria favor operational autonomy (40%), architectural discipline and stack (30%), and a clear production-ready demo (30%); the project is positioned in the **Taskmaster** category.
-- The live event window is currently open through 2026-09-01 00:00 UTC; the exact owner-entered date, submitter fields, architecture upload, and video remain intentionally unfilled here.
-- Best-fit category: **Taskmaster**. The agent is event-driven, asynchronous, and completes a multi-step travel recovery workflow without hand-holding.
-- Local verification is green: full backend tests (including the real webhook planning path), Ruff, strict mypy, landing production build, Sites tests, browser smoke, npm audit, and `git diff --check`.
-- Cloud deployment proof exists for the edge/worker split; current worker revision and digest are recorded in `docs/CLOUD_PROOF.md`.
-- Devpost project is still a local draft in this repository. Nothing was submitted from this workflow.
+- **Recommended category:** `Taskmaster` — it is a multi-step, event-driven workflow that takes action autonomously.
+- **Required Google stack:** Gemini 3.5+ via Vertex AI, Google ADK, Cloud Run, Firestore, and Pub/Sub.
+- **Required evidence still to attach:** public video, uploaded architecture PDF, actual project start date, actual submitter type/country, and final live smoke confirmation.
+- **Required disclosure:** confirm that the submitted project was created during the official submission period and disclose any pre-existing or third-party code/assets truthfully.
+- **Do not overclaim:** real ticket purchase, payment capture, Calendar writes, Gmail drafts/sends, and live external-provider mutations are not part of the judge demo unless separately enabled and verified.
 
 ## Known Limitations
 
-- Real airline/transfer/hotel mutations are not enabled; deterministic providers prove the workflow and later Duffel/Calendar/Gmail adapters remain scoped work.
-- Multimodal extraction is strongest when Gemini Vision is configured. The deterministic fallback rejects media without explicit times instead of fabricating a trip; hotel-only, MIME-sniffing, archive-expansion, and request-size hardening are deployed and regression-tested.
-- Compensation is a reviewable draft, not legal advice or automatic claim submission. A
-  recovered real incident exposes the draft only to the owning Telegram user; airline-fault
-  attribution and source evidence are required.
-- A real Telegram `/start` smoke and final visual browser review still need to be performed by the participant before the video is recorded.
-- A sealed Codex Security report is available for the scanned snapshot (scan ID
-  `5e56645d-fdd2-4d5c-9df9-41b750283967`). It reported two medium findings; both are fixed in
-  the current worktree; the fixes are pending the next owner-approved worker/edge rollout. TAC enrollment and final billing
-  budget configuration remain owner-controlled submission gates.
+- Planning results are not bookings; they become verified itineraries only after a traveler forwards booking evidence.
+- Google Search grounding can be unavailable because of quota or shared capacity. The product labels fallback results as estimates.
+- Real airline rebooking, payments, hotel/transfer mutations, Calendar writes, Gmail drafts, and third-party live monitoring require separate credentials, user consent, provider contracts, and reread verification. They remain disabled by default.
+- Compensation is an evidence-based draft for review, not legal advice and not an automatic claim submission.
+- Visa and baggage screening are conservative heuristics; unknown cases require human confirmation.
 
 ## TODO Official Form Fields
 
-- Submitter Type: `TODO — Individuals / Team of individuals / Organization`
-- Submitter country of residence: `TODO`
+- Submitter Type: `TODO — choose actual Individual / Team of individuals / Organization`
+- Submitter country of residence: `TODO — enter actual country`
 - Category: `Taskmaster`
-- Organization name: `N/A unless submitting on behalf of an incorporated organization`
-- Project start date (MM-DD-YY): `TODO — verify from the actual project history`
+- Organization name: `N/A unless entering as an incorporated organization`
+- Project start date (MM-DD-YY): `TODO — enter actual date; do not guess`
 - Code repository URL: `https://github.com/pfrhqxy6nk-blip/trip-recovery-agent`
 - Reproducible Testing instructions in README: `Yes`
-- Hosted project URL: `TODO`
-- Testing instructions for judges: `Use the testing section above; live bot smoke requires /start`
-- Google SDK: `Agent Development Kit (ADK); Google GenAI/Vertex AI integration`
+- Hosted project URL: `https://trip-watch.vercel.app/`
+- Google SDK: `Agent Development Kit (ADK)`
 - Google Cloud services: `Cloud Run; Firestore; Pub/Sub`
-- Architecture diagram: `docs/architecture-diagram.pdf`
-- Google AI models: `Gemini 3.5 Flash or newer, exact model ID supplied by deployment configuration`
-- Demo video URL: `TODO`
-- Optional bonus content/social links: `TODO / intentionally not added`
+- Architecture diagram: upload `docs/architecture-diagram.pdf`
+- Google AI model: `Gemini 3.5 Flash+ via Vertex AI` (enter the deployed model ID truthfully)
+- Demo video: `TODO — public YouTube/Vimeo URL`
+- Optional bonus content / social post: `TODO or leave blank`
